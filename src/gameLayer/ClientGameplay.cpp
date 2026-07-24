@@ -7,8 +7,12 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/transform.hpp>
 
+#include <platformTools.h>
 #include "platformInput.h"
+
+#if REMOVE_IMGUI == 0
 #include "imgui.h"
+#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -17,13 +21,15 @@
 #include <map>
 #include <sstream>
 
+#if REMOVE_IMGUI == 0
 #include "imfilebrowser.h"
-#include <gl2d/gl2d.h>
-#include <platformTools.h>
 #include <IconsForkAwesome.h>
 #include <imguiTools.h>
-#include <gl3d.h>
 #include <imgui_internal.h>
+#endif
+
+#include <gl2d/gl2d.h>
+#include <gl3d.h>
 
 #define PLAYER_ANIMATIONS 18
 
@@ -1823,14 +1829,24 @@ void updateThirdPersonCameraZoom(ClientGameplay &gameplay, bool ignoreImguiCaptu
 {
 	auto &thirdPersonCameraDistance = gameplay.thirdPersonCameraDistance;
 
+	float mouseWheelDelta = platform::getMouseWheelDelta();
+
+#if REMOVE_IMGUI == 0
 	ImGuiIO &io = ImGui::GetIO();
-	if ((!ignoreImguiCapture && io.WantCaptureMouse) || std::abs(io.MouseWheel) < 0.001f)
+	if (!ignoreImguiCapture && io.WantCaptureMouse)
+	{
+		return;
+	}
+	mouseWheelDelta = io.MouseWheel;
+#endif
+
+	if (std::abs(mouseWheelDelta) < 0.001f)
 	{
 		return;
 	}
 
 	thirdPersonCameraDistance = std::clamp(
-		thirdPersonCameraDistance - io.MouseWheel * THIRD_PERSON_CAMERA_ZOOM_STEP,
+		thirdPersonCameraDistance - mouseWheelDelta * THIRD_PERSON_CAMERA_ZOOM_STEP,
 		THIRD_PERSON_CAMERA_DISTANCE_MIN,
 		THIRD_PERSON_CAMERA_DISTANCE_MAX);
 }
@@ -2041,11 +2057,16 @@ void updateTransientGameplayMessage(ClientGameplay &gameplay, float deltaTime)
 void handleHunterShotInput(ClientGameplay &gameplay, const platform::Input &input)
 {
 	auto &clientNetworking = gameplay.clientNetworking;
+	bool wantsMouseCapture = false;
+
+#if REMOVE_IMGUI == 0
+	wantsMouseCapture = ImGui::GetIO().WantCaptureMouse;
+#endif
 
 	if (!isHunterFirstPersonActive(gameplay)
 		|| gameplay.paintModeActive
 		|| !input.lMouse.pressed
-		|| ImGui::GetIO().WantCaptureMouse)
+		|| wantsMouseCapture)
 	{
 		return;
 	}
@@ -2584,6 +2605,7 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 	renderPaintColorPicker(*this, renderer, paintUiFont);
 	renderGameplayNotifications(*this, renderer, paintUiFont);
 
+#if REMOVE_IMGUI == 0
 	if (0)
 	{
 		ImGuiViewport *mainVp = ImGui::GetMainViewport();
@@ -2679,6 +2701,7 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 		ImGui::PopMakeWindowNotTransparent();
 		ImGui::End();
 	}
+#endif
 
 	return true;
 }

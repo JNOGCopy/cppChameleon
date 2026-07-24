@@ -164,6 +164,7 @@ namespace platform
 
 	Controller getControllerButtons();
 	std::string getTypedInput();
+	float getMouseWheelDelta();
 
 	namespace internal
 	{
@@ -240,6 +241,7 @@ namespace platform
 
 		void updateAllButtons(float deltaTime);
 		void resetInputsToZero();
+		void addMouseWheelDelta(float delta);
 
 		void addToTypedInput(char c);
 		void resetTypedInput();

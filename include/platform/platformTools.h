@@ -16,7 +16,7 @@ inline float constexpr BYTES_TO_MB(size_t x) { return BYTES_TO_KB(x) / 1024.f; }
 inline float constexpr BYTES_TO_GB(size_t x) { return BYTES_TO_MB(x) / 1024.f; }
 
 
-#define REMOVE_IMGUI 0
+#define REMOVE_IMGUI 1
 
 
 void assertFuncProduction(

@@ -8,6 +8,7 @@ platform::Button middleMouse;
 
 platform::Controller controllerButtons;
 std::string typedInput;
+float mouseWheelDelta = 0.0f;
 
 platform::Button *platform::getAllButtons()
 {
@@ -113,6 +114,11 @@ std::string platform::getTypedInput()
 	return typedInput;
 }
 
+float platform::getMouseWheelDelta()
+{
+	return mouseWheelDelta;
+}
+
 void platform::internal::setButtonState(int button, int newState)
 {
 
@@ -137,9 +143,16 @@ void platform::internal::setMiddleMouseState(int newState)
 	processEventButton(middleMouse, newState);
 }
 
+void platform::internal::addMouseWheelDelta(float delta)
+{
+	mouseWheelDelta += delta;
+}
+
 
 void platform::internal::updateAllButtons(float deltaTime)
 {
+	mouseWheelDelta = 0.0f;
+
 	for (int i = 0; i < platform::Button::BUTTONS_COUNT; i++)
 	{
 		updateButton(keyBoard[i], deltaTime);

@@ -21,7 +21,7 @@
 #include "errorReporting.h"
 #include <stringManipulation.h>
 
-#define REMOVE_IMGUI 0
+#define REMOVE_IMGUI 1
 
 #if REMOVE_IMGUI == 0
 	#include "imgui.h"
@@ -204,6 +204,13 @@ void characterCallback(GLFWwindow *window, unsigned int codepoint)
 	{
 		platform::internal::addToTypedInput(codepoint);
 	}
+}
+
+void scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+{
+	(void)window;
+	(void)xoffset;
+	platform::internal::addMouseWheelDelta(static_cast<float>(yoffset));
 }
 
 #pragma region platform functions
@@ -483,6 +490,7 @@ int main()
 	glfwSetWindowSizeCallback(wind, windowSizeCallback);
 	glfwSetCursorPosCallback(wind, cursorPositionCallback);
 	glfwSetCharCallback(wind, characterCallback);
+	glfwSetScrollCallback(wind, scrollCallback);
 
 	//permaAssertComment(gladLoadGL(), "err initializing glad");
 	permaAssertComment(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress), "err initializing glad");
