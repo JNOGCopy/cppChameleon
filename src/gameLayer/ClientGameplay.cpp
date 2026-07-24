@@ -30,6 +30,8 @@
 namespace
 {
 	constexpr float PLAYER_MODEL_YAW_OFFSET = 3.141592f;
+	constexpr float GAMEPLAY_CAMERA_FOV_DEGREES = 60.0f;
+	constexpr float FIRST_PERSON_CAMERA_FOV_DEGREES = 65.0f;
 	constexpr float THIRD_PERSON_CAMERA_DISTANCE_DEFAULT = 7.5f;
 	constexpr float THIRD_PERSON_CAMERA_DISTANCE_MIN = 2.5f;
 	constexpr float THIRD_PERSON_CAMERA_DISTANCE_MAX = 12.0f;
@@ -1847,6 +1849,7 @@ void updateThirdPersonCamera(ClientGameplay &gameplay)
 
 	renderer3D.camera.viewDirection = cameraForward;
 	renderer3D.camera.position = target - cameraForward * thirdPersonCameraDistance;
+	renderer3D.camera.fovRadians = glm::radians(GAMEPLAY_CAMERA_FOV_DEGREES);
 }
 
 void updateFirstPersonCamera(ClientGameplay &gameplay)
@@ -1860,6 +1863,7 @@ void updateFirstPersonCamera(ClientGameplay &gameplay)
 		+ glm::vec3(0.0f, getThirdPersonTargetHeight(gameplay), 0.0f);
 	renderer3D.camera.position = eyePosition;
 	renderer3D.camera.viewDirection = buildThirdPersonForward(thirdPersonYaw, thirdPersonPitch);
+	renderer3D.camera.fovRadians = glm::radians(FIRST_PERSON_CAMERA_FOV_DEGREES);
 }
 
 void updateLocalPlayerVisibility(ClientGameplay &gameplay)
