@@ -475,12 +475,17 @@ int main()
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#else
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #endif
 
 
 	int w = 800;
 	int h = 800;
 	wind = glfwCreateWindow(w, h, "geam", nullptr, nullptr);
+	permaAssertComment(wind != nullptr, "Failed to create the requested OpenGL context.");
 	glfwMakeContextCurrent(wind);
 	glfwSwapInterval(1);
 
@@ -494,6 +499,15 @@ int main()
 
 	//permaAssertComment(gladLoadGL(), "err initializing glad");
 	permaAssertComment(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress), "err initializing glad");
+	permaAssertComment(GLAD_GL_VERSION_4_3 != 0, "gl3d requires an OpenGL 4.3 context.");
+	permaAssertComment(GLAD_GL_ARB_bindless_texture != 0, "gl3d requires GL_ARB_bindless_texture support.");
+
+	const char *glVendor = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
+	const char *glRenderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+	const char *glVersion = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+	std::cout << "OpenGL vendor: " << (glVendor ? glVendor : "unknown") << "\n";
+	std::cout << "OpenGL renderer: " << (glRenderer ? glRenderer : "unknown") << "\n";
+	std::cout << "OpenGL version: " << (glVersion ? glVersion : "unknown") << "\n";
 
 	enableReportGlErrors();
 
