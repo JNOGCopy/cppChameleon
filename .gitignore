@@ -1,6 +1,10 @@
 /out
 bin/
 build/
+!thirdparty/JoltPhysics/Build/
+!thirdparty/JoltPhysics/Build/**
+!thirdparty/zstd-1.5.5/build/
+!thirdparty/zstd-1.5.5/build/**
 /.vs
 .idea/
 /.agents
