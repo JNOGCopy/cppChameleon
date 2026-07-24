@@ -22246,7 +22246,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // The MIT License (MIT)
 //
-// Copyright (c) 2015 - 2020 Syoyo Fujita, Aurélien Chatelain and many
+// Copyright (c) 2015 - 2020 Syoyo Fujita, AurÃ©lien Chatelain and many
 // contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -24480,7 +24480,7 @@ namespace tinygltf
 	/*
 	   base64.cpp and base64.h
 
-	   Copyright (C) 2004-2008 René Nyffenegger
+	   Copyright (C) 2004-2008 RenÃ© Nyffenegger
 
 	   This source code is provided 'as-is', without any express or implied
 	   warranty. In no event will the author be held liable for any damages
@@ -24500,7 +24500,7 @@ namespace tinygltf
 
 	   3. This notice may not be removed or altered from any source distribution.
 
-	   René Nyffenegger rene.nyffenegger@adp-gmbh.ch
+	   RenÃ© Nyffenegger rene.nyffenegger@adp-gmbh.ch
 
 	*/
 
@@ -31684,41 +31684,54 @@ namespace gl3d
 
 		glBindTexture(GL_TEXTURE_2D, id);
 
+		auto setAnisotropy = [](float desiredLevel)
+		{
+			if (!GLAD_GL_EXT_texture_filter_anisotropic)
+			{
+				return;
+			}
+
+			float maxSupportedAnisotropy = 1.f;
+			glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxSupportedAnisotropy);
+			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+				std::clamp(desiredLevel, 1.f, maxSupportedAnisotropy));
+		};
+
 		switch (quality)
 		{
 		case leastPossible:
 		{
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 1.f);
+			setAnisotropy(1.f);
 		}
 		break;
 		case linearNoMipmap:
 		{
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 1.f);
+			setAnisotropy(1.f);
 		}
 		break;
 		case nearestMipmap:
 		{
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 1.f);
+			setAnisotropy(1.f);
 		}
 		break;
 		case linearMipmap:
 		{
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 4.f);
+			setAnisotropy(4.f);
 		}
 		break;
 		case maxQuality:
 		{
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 8.f);
+			setAnisotropy(8.f);
 		}
 		break;
 		default:
@@ -34164,7 +34177,7 @@ namespace gl3d
 "emissive.rgb *= mat[materialIndex-1].rma.a;\n"
 "emissive = pow(emissive , vec3(2.2)).rgb; \n"
 "uvec2 rmaSampler = mat[materialIndex-1].firstBIndlessSamplers.zw;\n"
-"if(rmaSampler.x == 0 && rmaSampler.y == 0 && mat[materialIndex-1].rmaLoaded != 0)\n"
+"if((rmaSampler.x == 0 && rmaSampler.y == 0) || mat[materialIndex-1].rmaLoaded == 0)\n"
 "{\n"
 "material.r = mat[materialIndex-1].rma.r;\n"
 "material.g = mat[materialIndex-1].rma.g;\n"
@@ -43769,7 +43782,7 @@ namespace gl3d
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, buffers[textureDerivates], 0);
 
 		glBindTexture(GL_TEXTURE_2D, buffers[positionViewSpace]);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, 1, 1, 0, GL_RGBA, GL_FLOAT, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, 1, 1, 0, GL_RGB, GL_FLOAT, NULL);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -43831,7 +43844,7 @@ namespace gl3d
 			//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, w, h, 0, GL_RGBA, GL_FLOAT, NULL);
 
 			glBindTexture(GL_TEXTURE_2D, buffers[positionViewSpace]);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGBA, GL_FLOAT, NULL);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_FLOAT, NULL);
 
 			glBindTexture(GL_TEXTURE_2D, buffers[materialIndex]);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_R16I, w, h, 0, GL_RED_INTEGER, GL_SHORT, NULL);
