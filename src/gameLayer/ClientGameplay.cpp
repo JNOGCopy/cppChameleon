@@ -34,6 +34,7 @@ namespace
 	constexpr float THIRD_PERSON_CAMERA_DISTANCE_MAX = 12.0f;
 	constexpr float THIRD_PERSON_CAMERA_ZOOM_STEP = 0.85f;
 	constexpr float THIRD_PERSON_CAMERA_TARGET_HEIGHT = 1.45f;
+	constexpr float HUNTER_VISUAL_SCALE = 2.0f;
 	const float THIRD_PERSON_PITCH_MIN = glm::radians(-70.0f);
 	const float THIRD_PERSON_PITCH_MAX = glm::radians(35.0f);
 	constexpr int PLAYER_PAINT_BRUSH_RADIUS_DEFAULT = 6;
@@ -54,6 +55,10 @@ namespace
 	constexpr float PLAYER_STATE_YAW_EPSILON = 0.02f;
 	constexpr float REMOTE_PLAYER_INTERPOLATION_SPEED = 22.0f;
 	constexpr float REMOTE_PLAYER_SNAP_DISTANCE = 4.0f;
+	constexpr float HUNTER_SHOT_MAX_DISTANCE = 120.0f;
+	constexpr float PLAYER_RAYCAST_SPHERE_RADIUS = 0.38f;
+	constexpr float HUNTER_FOUND_MESSAGE_DURATION = 3.0f;
+	constexpr float ROUND_RESULT_MESSAGE_DURATION = 4.0f;
 
 	using PlayerPaintTexture = ClientGameplay::PlayerPaintTexture;
 	using CameraMode = ClientGameplay::CameraMode;
@@ -241,6 +246,42 @@ glm::vec3 getRightFromForward(glm::vec3 forward)
 	return right / rightLength;
 }
 
+float getPlayerVisualScale(const ClientGameplay &gameplay, std::uint64_t cid)
+{
+	return gameplay.clientNetworking.isHunter(cid) ? HUNTER_VISUAL_SCALE : 1.0f;
+}
+
+float getLocalPlayerVisualScale(const ClientGameplay &gameplay)
+{
+	return getPlayerVisualScale(gameplay, gameplay.clientNetworking.localCID);
+}
+
+float getThirdPersonTargetHeight(const ClientGameplay &gameplay)
+{
+	return THIRD_PERSON_CAMERA_TARGET_HEIGHT * getLocalPlayerVisualScale(gameplay);
+}
+
+bool isHunterGameplayCameraLocked(const ClientGameplay &gameplay)
+{
+	return gameplay.clientNetworking.gameActive && gameplay.clientNetworking.isLocalHunter();
+}
+
+bool isHunterHidePhaseActive(const ClientGameplay &gameplay)
+{
+	return gameplay.clientNetworking.gameActive
+		&& gameplay.clientNetworking.isLocalHunter()
+		&& gameplay.clientNetworking.roundPhase == ClientNetworking::RoundPhase::HiderHide;
+}
+
+bool isHunterFirstPersonActive(const ClientGameplay &gameplay)
+{
+	return gameplay.cameraMode == CameraMode::ThirdPerson
+		&& gameplay.clientNetworking.gameActive
+		&& gameplay.clientNetworking.isLocalHunter()
+		&& gameplay.clientNetworking.roundPhase == ClientNetworking::RoundPhase::HunterSearch
+		&& !gameplay.paintModeActive;
+}
+
 void syncThirdPersonOrbitToCamera(ClientGameplay &gameplay)
 {
 	auto &renderer3D = gameplay.renderer3D;
@@ -257,6 +298,11 @@ void setCameraMode(ClientGameplay &gameplay, CameraMode newMode)
 	auto &cameraMode = gameplay.cameraMode;
 	auto &paintModeActive = gameplay.paintModeActive;
 	auto &paintColorPickModeActive = gameplay.paintColorPickModeActive;
+
+	if (newMode != CameraMode::ThirdPerson && isHunterGameplayCameraLocked(gameplay))
+	{
+		return;
+	}
 
 	if (cameraMode == newMode)
 	{
@@ -279,6 +325,24 @@ void setCameraMode(ClientGameplay &gameplay, CameraMode newMode)
 void toggleCameraMode(ClientGameplay &gameplay)
 {
 	setCameraMode(gameplay, gameplay.cameraMode == CameraMode::Free ? CameraMode::ThirdPerson : CameraMode::Free);
+}
+
+void updateForcedHunterHidePaintModeState(ClientGameplay &gameplay)
+{
+	if (isHunterHidePhaseActive(gameplay))
+	{
+		gameplay.paintModeActive = true;
+		gameplay.hunterHidePhaseForcedPaintMode = true;
+		return;
+	}
+
+	if (gameplay.hunterHidePhaseForcedPaintMode)
+	{
+		gameplay.hunterHidePhaseForcedPaintMode = false;
+		gameplay.paintModeActive = false;
+		gameplay.paintColorPickModeActive = false;
+		gameplay.hasLastPaintStrokeScreenPosition = false;
+	}
 }
 
 void applyFreeCameraInput(::gl3d::Renderer3D &rendererRef, float speed, float deltaTime, const glm::vec2 &lookDelta)
@@ -390,7 +454,7 @@ int getCurrentLocalAnimationIndex(ClientGameplay &gameplay, const PhysicsControl
 	const bool hasMovementInput = glm::dot(playerInput.moveDirection, playerInput.moveDirection) > 0.0001f;
 	if (playerInput.wantsToRun && hasMovementInput)
 	{
-		return 9;
+		gameplay.localAnimationIndex = 9;
 	}
 
 	return gameplay.localAnimationIndex;
@@ -406,6 +470,7 @@ void syncPlayerEntityToPhysics(ClientGameplay &gameplay)
 	playerTransform.position = playerPhysics.getPlayerPosition();
 	playerTransform.rotation = {};
 	playerTransform.rotation.y = playerPhysics.getPlayerYaw() + PLAYER_MODEL_YAW_OFFSET;
+	playerTransform.scale = glm::vec3(getLocalPlayerVisualScale(gameplay));
 	renderer3D.setEntityTransform(playerEntity, playerTransform);
 }
 
@@ -666,8 +731,10 @@ void syncRemotePlayers(ClientGameplay &gameplay, float deltaTime)
 		transform.position = remotePlayer.visualPosition;
 		transform.rotation = {};
 		transform.rotation.y = remotePlayer.visualYaw + PLAYER_MODEL_YAW_OFFSET;
+		transform.scale = glm::vec3(getPlayerVisualScale(gameplay, cid));
 		renderer3D.setEntityTransform(remotePlayer.entity, transform);
 		renderer3D.setEntityAnimationIndex(remotePlayer.entity, remoteState.animationIndex);
+		renderer3D.setEntityVisible(remotePlayer.entity, !isHunterHidePhaseActive(gameplay));
 		applyPendingRemotePaintUpdates(gameplay, cid, remotePlayer);
 	}
 }
@@ -1165,6 +1232,75 @@ void resetPaintStrokeState(ClientGameplay &gameplay)
 	lastPaintStrokeScreenPosition = {};
 }
 
+void resetEntityPaintTexturesToModelDefaults(ClientGameplay &gameplay, gl3d::Entity &entity,
+	gl3d::Model &model, std::vector<PlayerPaintTexture> &paintTextures, bool setAsPaintTarget)
+{
+	auto &renderer3D = gameplay.renderer3D;
+
+	clearPaintTextures(gameplay, paintTextures);
+	renderer3D.setEntityModel(entity, model);
+	renderer3D.setEntityAnimate(entity, true);
+	setupEntityPaintTextures(gameplay, entity, paintTextures, setAsPaintTarget);
+}
+
+void resetClientRoundStartState(ClientGameplay &gameplay)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+	auto &playerPhysics = gameplay.playerPhysics;
+	auto &playerEntity = gameplay.playerEntity;
+	auto &playerModel = gameplay.playerModel;
+	auto &playerPaintTextures = gameplay.playerPaintTextures;
+	auto &remotePlayers = gameplay.remotePlayers;
+
+	playerPhysics.resetToSpawn();
+	const glm::vec3 spawnPosition = playerPhysics.getSpawnPosition();
+
+	resetEntityPaintTexturesToModelDefaults(
+		gameplay,
+		playerEntity,
+		playerModel,
+		playerPaintTextures,
+		true);
+
+	clientNetworking.remotePaintUpdates.clear();
+	for (auto &[cid, remoteState] : clientNetworking.remotePlayers)
+	{
+		(void)cid;
+		remoteState.position = spawnPosition;
+		remoteState.yaw = 0.0f;
+		remoteState.animationIndex = 9;
+	}
+
+	for (auto &[cid, remotePlayer] : remotePlayers)
+	{
+		(void)cid;
+		if (gameplay.renderer3D.isEntity(remotePlayer.entity))
+		{
+			resetEntityPaintTexturesToModelDefaults(
+				gameplay,
+				remotePlayer.entity,
+				playerModel,
+				remotePlayer.paintTextures,
+				false);
+		}
+
+		remotePlayer.visualPosition = spawnPosition;
+		remotePlayer.visualYaw = 0.0f;
+		remotePlayer.hasVisualState = true;
+	}
+
+	gameplay.localAnimationIndex = 9;
+	gameplay.hasLastSentPlayerState = false;
+	gameplay.lastSentPlayerState = {};
+	gameplay.timeSinceLastReliablePlayerStateSent = PLAYER_STATE_SEND_INTERVAL_RELIABLE;
+	gameplay.timeSinceLastUnreliablePlayerStateSent = 0.0f;
+	gameplay.timeSinceLastPaintTextureSync = 0.0f;
+	gameplay.localPaintTexturesDirty = false;
+	gameplay.paintColorPickModeActive = false;
+	gameplay.paintDebugState = {};
+	resetPaintStrokeState(gameplay);
+}
+
 bool paintInterpolatedStrokeScreenSpace(ClientGameplay &gameplay,
 	glm::ivec2 fromScreenPosition,
 	glm::ivec2 toScreenPosition,
@@ -1537,15 +1673,378 @@ void updateThirdPersonCamera(ClientGameplay &gameplay)
 
 	const glm::vec3 playerPosition = playerPhysics.getPlayerPosition();
 	const glm::vec3 cameraForward = buildThirdPersonForward(thirdPersonYaw, thirdPersonPitch);
-	const glm::vec3 target = playerPosition + glm::vec3(0.0f, THIRD_PERSON_CAMERA_TARGET_HEIGHT, 0.0f);
+	const glm::vec3 target = playerPosition + glm::vec3(0.0f, getThirdPersonTargetHeight(gameplay), 0.0f);
 
 	renderer3D.camera.viewDirection = cameraForward;
 	renderer3D.camera.position = target - cameraForward * thirdPersonCameraDistance;
 }
 
+void updateFirstPersonCamera(ClientGameplay &gameplay)
+{
+	auto &playerPhysics = gameplay.playerPhysics;
+	auto &thirdPersonYaw = gameplay.thirdPersonYaw;
+	auto &thirdPersonPitch = gameplay.thirdPersonPitch;
+	auto &renderer3D = gameplay.renderer3D;
+
+	const glm::vec3 eyePosition = playerPhysics.getPlayerPosition()
+		+ glm::vec3(0.0f, getThirdPersonTargetHeight(gameplay), 0.0f);
+	renderer3D.camera.position = eyePosition;
+	renderer3D.camera.viewDirection = buildThirdPersonForward(thirdPersonYaw, thirdPersonPitch);
+}
+
+void updateLocalPlayerVisibility(ClientGameplay &gameplay)
+{
+	auto &renderer3D = gameplay.renderer3D;
+	auto &playerEntity = gameplay.playerEntity;
+	const bool shouldBeVisible = !isHunterFirstPersonActive(gameplay);
+
+	if (renderer3D.isEntity(playerEntity) && renderer3D.isEntityVisible(playerEntity) != shouldBeVisible)
+	{
+		renderer3D.setEntityVisible(playerEntity, shouldBeVisible);
+	}
+}
+
+void showTransientTopMessage(ClientGameplay &gameplay, std::string message, float duration)
+{
+	gameplay.transientTopMessage = std::move(message);
+	gameplay.transientTopMessageTimer = duration;
+}
+
+bool intersectRaySphere(const glm::vec3 &origin, const glm::vec3 &direction,
+	const glm::vec3 &center, float radius, float &hitDistance)
+{
+	const glm::vec3 offset = origin - center;
+	const float b = glm::dot(offset, direction);
+	const float c = glm::dot(offset, offset) - radius * radius;
+	const float discriminant = b * b - c;
+	if (discriminant < 0.0f)
+	{
+		return false;
+	}
+
+	const float sqrtDiscriminant = std::sqrt(discriminant);
+	float resolvedDistance = -b - sqrtDiscriminant;
+	if (resolvedDistance < 0.0f)
+	{
+		resolvedDistance = -b + sqrtDiscriminant;
+	}
+
+	if (resolvedDistance < 0.0f)
+	{
+		return false;
+	}
+
+	hitDistance = resolvedDistance;
+	return true;
+}
+
+bool intersectRemotePlayerHitCollider(const ClientGameplay &gameplay, std::uint64_t cid,
+	const RemotePlayerVisual &remotePlayer, const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection,
+	float maxDistance, float &hitDistance)
+{
+	if (!remotePlayer.hasVisualState)
+	{
+		return false;
+	}
+
+	const float scale = getPlayerVisualScale(gameplay, cid);
+	const float radius = PLAYER_RAYCAST_SPHERE_RADIUS * scale;
+	const glm::vec3 basePosition = remotePlayer.visualPosition;
+	const glm::vec3 sphereCenters[] =
+	{
+		basePosition + glm::vec3(0.0f, 0.55f * scale, 0.0f),
+		basePosition + glm::vec3(0.0f, 1.15f * scale, 0.0f),
+		basePosition + glm::vec3(0.0f, 1.75f * scale, 0.0f),
+	};
+
+	bool foundIntersection = false;
+	hitDistance = maxDistance;
+
+	for (const glm::vec3 &sphereCenter : sphereCenters)
+	{
+		float sphereHitDistance = 0.0f;
+		if (intersectRaySphere(rayOrigin, rayDirection, sphereCenter, radius, sphereHitDistance)
+			&& sphereHitDistance <= maxDistance
+			&& sphereHitDistance < hitDistance)
+		{
+			hitDistance = sphereHitDistance;
+			foundIntersection = true;
+		}
+	}
+
+	return foundIntersection;
+}
+
+bool tryFindHunterShotTarget(ClientGameplay &gameplay, std::uint64_t &targetCID)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+	auto &renderer3D = gameplay.renderer3D;
+	auto &playerPhysics = gameplay.playerPhysics;
+	auto &remotePlayers = gameplay.remotePlayers;
+
+	targetCID = 0;
+
+	glm::vec3 rayDirection = renderer3D.camera.viewDirection;
+	const float directionLength = glm::length(rayDirection);
+	if (directionLength <= 0.0001f)
+	{
+		return false;
+	}
+
+	rayDirection /= directionLength;
+	const glm::vec3 rayOrigin = renderer3D.camera.position;
+
+	float blockingGeometryDistance = HUNTER_SHOT_MAX_DISTANCE;
+	const bool hitBlockingGeometry = playerPhysics.raycastStaticGeometry(
+		rayOrigin,
+		rayDirection,
+		HUNTER_SHOT_MAX_DISTANCE,
+		blockingGeometryDistance);
+
+	bool foundTarget = false;
+	float bestHitDistance = hitBlockingGeometry ? blockingGeometryDistance : HUNTER_SHOT_MAX_DISTANCE;
+
+	for (auto &[cid, remotePlayer] : remotePlayers)
+	{
+		if (cid == 0
+			|| cid == clientNetworking.hunterCID
+			|| clientNetworking.isPlayerFound(cid))
+		{
+			continue;
+		}
+
+		float playerHitDistance = HUNTER_SHOT_MAX_DISTANCE;
+		if (intersectRemotePlayerHitCollider(
+			gameplay,
+			cid,
+			remotePlayer,
+			rayOrigin,
+			rayDirection,
+			HUNTER_SHOT_MAX_DISTANCE,
+			playerHitDistance)
+			&& playerHitDistance <= bestHitDistance)
+		{
+			bestHitDistance = playerHitDistance;
+			targetCID = cid;
+			foundTarget = true;
+		}
+	}
+
+	return foundTarget;
+}
+
+void updateTransientGameplayMessage(ClientGameplay &gameplay, float deltaTime)
+{
+	auto &transientTopMessageTimer = gameplay.transientTopMessageTimer;
+	auto &transientTopMessage = gameplay.transientTopMessage;
+	auto &lastSeenRoundResult = gameplay.lastSeenRoundResult;
+	auto &clientNetworking = gameplay.clientNetworking;
+
+	if (transientTopMessageTimer > 0.0f)
+	{
+		transientTopMessageTimer = (std::max)(0.0f, transientTopMessageTimer - deltaTime);
+		if (transientTopMessageTimer <= 0.0f)
+		{
+			transientTopMessage.clear();
+		}
+	}
+
+	if (clientNetworking.roundResult != lastSeenRoundResult)
+	{
+		lastSeenRoundResult = clientNetworking.roundResult;
+		if (lastSeenRoundResult == ClientNetworking::RoundResult::HunterWon)
+		{
+			showTransientTopMessage(gameplay, "Hunter won.", ROUND_RESULT_MESSAGE_DURATION);
+		}
+		else if (clientNetworking.gameActive)
+		{
+			transientTopMessage.clear();
+			transientTopMessageTimer = 0.0f;
+		}
+	}
+}
+
+void handleHunterShotInput(ClientGameplay &gameplay, const platform::Input &input)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+
+	if (!isHunterFirstPersonActive(gameplay)
+		|| gameplay.paintModeActive
+		|| !input.lMouse.pressed
+		|| ImGui::GetIO().WantCaptureMouse)
+	{
+		return;
+	}
+
+	std::uint64_t targetCID = 0;
+	if (tryFindHunterShotTarget(gameplay, targetCID)
+		&& clientNetworking.sendHunterHitPlayer(targetCID))
+	{
+		showTransientTopMessage(gameplay, "You found someone.", HUNTER_FOUND_MESSAGE_DURATION);
+	}
+}
+
+void renderTopStatusMessage(gl2d::Renderer2D &renderer, gl2d::Font &font, const std::string &message,
+	float topOffset, gl2d::Color4f panelColor, gl2d::Color4f textColor)
+{
+	if (message.empty() || font.texture.id == 0 || renderer.windowW <= 0 || renderer.windowH <= 0)
+	{
+		return;
+	}
+
+	constexpr float cTextSize = 18.0f;
+	constexpr float cPaddingX = 14.0f;
+	constexpr float cPaddingY = 10.0f;
+
+	const glm::vec2 textSize = renderer.getTextSize(message.c_str(), font, cTextSize, 2.0f, 2.0f);
+	const gl2d::Rect panel = {
+		(renderer.windowW - (textSize.x + cPaddingX * 2.0f)) * 0.5f,
+		topOffset,
+		textSize.x + cPaddingX * 2.0f,
+		textSize.y + cPaddingY * 2.0f
+	};
+
+	renderer.renderRectangle(panel, panelColor);
+	renderer.renderRectangleOutline(panel, {0.0f, 0.0f, 0.0f, 0.92f}, 2.0f);
+	renderer.renderText(
+		{panel.x + cPaddingX, panel.y + cPaddingY + textSize.y},
+		message.c_str(),
+		font,
+		textColor,
+		cTextSize,
+		2.0f,
+		2.0f,
+		false);
+}
+
+void renderHunterCrosshair(const ClientGameplay &gameplay, gl2d::Renderer2D &renderer)
+{
+	if (!isHunterFirstPersonActive(gameplay) || renderer.windowW <= 0 || renderer.windowH <= 0)
+	{
+		return;
+	}
+
+	const float centerX = renderer.windowW * 0.5f;
+	const float centerY = renderer.windowH * 0.5f;
+	constexpr float cGap = 3.0f;
+	constexpr float cArmLength = 8.0f;
+	constexpr float cOuterThickness = 3.0f;
+	constexpr float cInnerThickness = 1.0f;
+
+	const gl2d::Color4f outerColor = {0.0f, 0.0f, 0.0f, 0.95f};
+	const gl2d::Color4f innerColor = {0.96f, 0.96f, 0.96f, 0.95f};
+
+	const gl2d::Rect horizontalOuter = {
+		centerX - cGap - cArmLength,
+		centerY - cOuterThickness * 0.5f,
+		cArmLength * 2.0f + cGap * 2.0f,
+		cOuterThickness
+	};
+	const gl2d::Rect verticalOuter = {
+		centerX - cOuterThickness * 0.5f,
+		centerY - cGap - cArmLength,
+		cOuterThickness,
+		cArmLength * 2.0f + cGap * 2.0f
+	};
+
+	const gl2d::Rect horizontalInnerLeft = {
+		centerX - cGap - cArmLength,
+		centerY - cInnerThickness * 0.5f,
+		cArmLength,
+		cInnerThickness
+	};
+	const gl2d::Rect horizontalInnerRight = {
+		centerX + cGap,
+		centerY - cInnerThickness * 0.5f,
+		cArmLength,
+		cInnerThickness
+	};
+	const gl2d::Rect verticalInnerTop = {
+		centerX - cInnerThickness * 0.5f,
+		centerY - cGap - cArmLength,
+		cInnerThickness,
+		cArmLength
+	};
+	const gl2d::Rect verticalInnerBottom = {
+		centerX - cInnerThickness * 0.5f,
+		centerY + cGap,
+		cInnerThickness,
+		cArmLength
+	};
+
+	renderer.renderRectangle(horizontalOuter, outerColor);
+	renderer.renderRectangle(verticalOuter, outerColor);
+	renderer.renderRectangle(horizontalInnerLeft, innerColor);
+	renderer.renderRectangle(horizontalInnerRight, innerColor);
+	renderer.renderRectangle(verticalInnerTop, innerColor);
+	renderer.renderRectangle(verticalInnerBottom, innerColor);
+}
+
+void renderGameplayNotifications(ClientGameplay &gameplay, gl2d::Renderer2D &renderer, gl2d::Font &font)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+	auto &transientTopMessage = gameplay.transientTopMessage;
+	auto &transientTopMessageTimer = gameplay.transientTopMessageTimer;
+
+	renderer.pushCamera();
+	renderHunterCrosshair(gameplay, renderer);
+
+	float topOffset = 18.0f;
+	if (clientNetworking.localPlayerFound)
+	{
+		renderTopStatusMessage(
+			renderer,
+			font,
+			"You were hit.",
+			topOffset,
+			{0.42f, 0.11f, 0.11f, 0.9f},
+			Colors_White);
+		topOffset += 44.0f;
+	}
+
+	if (transientTopMessageTimer > 0.0f && !transientTopMessage.empty())
+	{
+		const bool roundWonMessage = clientNetworking.roundResult == ClientNetworking::RoundResult::HunterWon
+			&& transientTopMessage == "Hunter won.";
+		renderTopStatusMessage(
+			renderer,
+			font,
+			transientTopMessage,
+			topOffset,
+			roundWonMessage
+				? gl2d::Color4f{0.45f, 0.32f, 0.08f, 0.9f}
+				: gl2d::Color4f{0.12f, 0.32f, 0.18f, 0.9f},
+			Colors_White);
+		topOffset += 44.0f;
+	}
+
+	if (clientNetworking.gameActive
+		&& clientNetworking.roundPhase != ClientNetworking::RoundPhase::Lobby)
+	{
+		const int timerSeconds = (std::max)(
+			0,
+			static_cast<int>(std::ceil(clientNetworking.roundTimerRemainingSeconds)));
+		const std::string timerMessage = std::string(
+			clientNetworking.roundPhase == ClientNetworking::RoundPhase::HiderHide
+				? "Hide time: "
+				: "Hunter time: ")
+			+ std::to_string(timerSeconds) + "s";
+
+		renderTopStatusMessage(
+			renderer,
+			font,
+			timerMessage,
+			topOffset,
+			{0.11f, 0.20f, 0.44f, 0.9f},
+			Colors_White);
+	}
+
+	renderer.popCamera();
+}
+
 bool ClientGameplay::init(const char *serverAddress)
 {
-	cameraMode = CameraMode::Free;
+	cameraMode = CameraMode::ThirdPerson;
 	thirdPersonYaw = 0.0f;
 	thirdPersonPitch = glm::radians(-18.0f);
 	thirdPersonCameraDistance = THIRD_PERSON_CAMERA_DISTANCE_DEFAULT;
@@ -1570,6 +2069,11 @@ bool ClientGameplay::init(const char *serverAddress)
 	clientNetworking.remotePaintUpdates.clear();
 	timeSinceLastPaintTextureSync = 0.0f;
 	localPaintTexturesDirty = false;
+	hunterHidePhaseForcedPaintMode = false;
+	transientTopMessage.clear();
+	transientTopMessageTimer = 0.0f;
+	lastSeenRoundResult = ClientNetworking::RoundResult::None;
+	lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
 	clearRemotePlayers(*this);
 
 	if (!clientNetworking.connectToServer(serverAddress))
@@ -1581,6 +2085,7 @@ bool ClientGameplay::init(const char *serverAddress)
 	platform::showMouse(false);
 
 	renderer3D.init(1, 1, RESOURCES_PATH "BRDFintegrationMap.png");
+	renderer3D.frustumCulling = false;
 
 	renderer3D.skyBox = renderer3D.loadHDRSkyBox(RESOURCES_PATH "sky.hdr");
 
@@ -1632,7 +2137,7 @@ bool ClientGameplay::init(const char *serverAddress)
 
 	renderer3D.camera.position = {0.0f, 2.2f, 6.0f};
 	renderer3D.camera.viewDirection = glm::normalize(
-		glm::vec3(0.0f, THIRD_PERSON_CAMERA_TARGET_HEIGHT, 0.0f) - renderer3D.camera.position);
+		glm::vec3(0.0f, getThirdPersonTargetHeight(*this), 0.0f) - renderer3D.camera.position);
 	syncThirdPersonOrbitToCamera(*this);
 #pragma endregion
 
@@ -1647,15 +2152,33 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 	const int h = platform::getFrameBufferSizeY();
 #pragma endregion
 
-	clientNetworking.update();
+	clientNetworking.update(deltaTime);
+	updateTransientGameplayMessage(*this, deltaTime);
 	renderer3D.updateWindowMetrics(w, h);
+	playerPhysics.setHunterMode(clientNetworking.isLocalHunter());
+	const bool enteredRoundStartPhase =
+		clientNetworking.roundPhase == ClientNetworking::RoundPhase::HiderHide
+		&& lastSeenRoundPhase != ClientNetworking::RoundPhase::HiderHide;
+	if (enteredRoundStartPhase)
+	{
+		resetClientRoundStartState(*this);
+	}
+	lastSeenRoundPhase = clientNetworking.roundPhase;
+	if (isHunterGameplayCameraLocked(*this))
+	{
+		setCameraMode(*this, CameraMode::ThirdPerson);
+	}
+	updateForcedHunterHidePaintModeState(*this);
 
-	if (platform::isButtonPressed(platform::Button::Tab))
+	if (platform::isButtonPressed(platform::Button::Tab)
+		&& !isHunterGameplayCameraLocked(*this))
 	{
 		toggleCameraMode(*this);
 	}
 
-	if (cameraMode == CameraMode::ThirdPerson && platform::isButtonPressed(platform::Button::F))
+	if (cameraMode == CameraMode::ThirdPerson
+		&& !hunterHidePhaseForcedPaintMode
+		&& platform::isButtonPressed(platform::Button::F))
 	{
 		paintModeActive = !paintModeActive;
 		if (!paintModeActive)
@@ -1699,13 +2222,20 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 				thirdPersonPitch + lookDelta.y,
 				THIRD_PERSON_PITCH_MIN,
 				THIRD_PERSON_PITCH_MAX);
-			updateThirdPersonCameraZoom(*this);
-			playerInput = buildPlayerInput(*this);
+			if (!isHunterFirstPersonActive(*this))
+			{
+				updateThirdPersonCameraZoom(*this);
+			}
+			if (!isHunterHidePhaseActive(*this))
+			{
+				playerInput = buildPlayerInput(*this);
+			}
 		}
 	}
 
 	playerPhysics.update(deltaTime, playerInput);
 	syncPlayerEntityToPhysics(*this);
+	updateLocalPlayerVisibility(*this);
 	const int currentAnimationIndex = getCurrentLocalAnimationIndex(*this, playerInput);
 	renderer3D.setEntityAnimationIndex(playerEntity, currentAnimationIndex);
 	sendLocalPlayerState(*this, deltaTime, currentAnimationIndex);
@@ -1713,8 +2243,17 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 
 	if (cameraMode == CameraMode::ThirdPerson)
 	{
-		updateThirdPersonCamera(*this);
+		if (isHunterFirstPersonActive(*this))
+		{
+			updateFirstPersonCamera(*this);
+		}
+		else
+		{
+			updateThirdPersonCamera(*this);
+		}
 	}
+
+	handleHunterShotInput(*this, input);
 
 	renderer3D.render(deltaTime);
 	pickPaintColorFromScreen(*this, input);
@@ -1722,7 +2261,9 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 	sendLocalPaintTextures(*this, deltaTime);
 	renderPaintBrushOverlay(*this, input, renderer);
 	renderPaintColorPicker(*this, renderer, paintUiFont);
+	renderGameplayNotifications(*this, renderer, paintUiFont);
 
+	if (0)
 	{
 		ImGuiViewport *mainVp = ImGui::GetMainViewport();
 
@@ -1742,13 +2283,26 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 
 		ImGui::SliderInt("Animation", &localAnimationIndex, 0, PLAYER_ANIMATIONS - 1);
 		ImGui::Text("Anim cycle: Q previous / E next");
-		ImGui::Text("Camera: %s", cameraMode == CameraMode::Free ? "Free" : "Third-Person");
-		if (ImGui::Button(cameraMode == CameraMode::Free ? "Switch to Third-Person (Tab)" : "Switch to Free Camera (Tab)"))
+		const bool hunterCameraLocked = isHunterGameplayCameraLocked(*this);
+		const bool hunterFirstPerson = isHunterFirstPersonActive(*this);
+		const char *cameraName = cameraMode == CameraMode::Free
+			? "Free"
+			: (hunterFirstPerson ? "First-Person" : (paintModeActive && hunterCameraLocked ? "Third-Person (Paint)" : "Third-Person"));
+		ImGui::Text("Camera: %s", cameraName);
+		if (ImGui::Button(
+			hunterCameraLocked
+				? "Gameplay Camera Locked (Hunter)"
+				: (cameraMode == CameraMode::Free ? "Switch to Third-Person (Tab)" : "Switch to Free Camera (Tab)")))
 		{
 			toggleCameraMode(*this);
 		}
+		if (hunterCameraLocked)
+		{
+			ImGui::Text("Hunter hide phase forces paint mode. Hunter search uses first-person.");
+		}
 		ImGui::Text("Free camera: WASD + Q/E");
 		ImGui::Text("Player: WASD move, Shift run / wall descend, Space jump / wall climb");
+		ImGui::Text("Hunter: Left click to shoot hiders in first-person");
 		ImGui::Text("Paint mode: %s", paintModeActive ? "On" : "Off");
 		ImGui::Text("Paint: F toggle, C pick color, Left click paint, Right drag resize, Middle drag orbit, Scroll zoom");
 		ImGui::Text("Paint brush radius: %d%s", playerPaintBrushRadius, paintDebugState.brushResizeActive ? " (resizing)" : "");
@@ -1788,6 +2342,15 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 		ImGui::Text("Net state: %s", clientNetworking.getConnectionStateName());
 		ImGui::Text("Server IP: %s", clientNetworking.connectedServerAddress.c_str());
 		ImGui::Text("Net status: %s", clientNetworking.lastStatus.c_str());
+		ImGui::Text("Game active: %s", clientNetworking.gameActive ? "Yes" : "No");
+		ImGui::Text(
+			"Round phase: %s",
+			clientNetworking.roundPhase == ClientNetworking::RoundPhase::HiderHide
+				? "Hider Hide"
+				: (clientNetworking.roundPhase == ClientNetworking::RoundPhase::HunterSearch ? "Hunter Search" : "Lobby"));
+		ImGui::Text("Round timer: %.1fs", clientNetworking.roundTimerRemainingSeconds);
+		ImGui::Text("Role: %s", clientNetworking.isLocalHunter() ? "Hunter" : (clientNetworking.gameActive ? "Hider" : "None"));
+		ImGui::Text("Hunter CID: %llu", static_cast<unsigned long long>(clientNetworking.hunterCID));
 		ImGui::Text("Received player data: %s", clientNetworking.receivedPlayerData ? "Yes" : "No");
 		ImGui::Text("Local CID: %llu", static_cast<unsigned long long>(clientNetworking.localCID));
 		ImGui::Text("Remote players: %d", static_cast<int>(remotePlayers.size()));
@@ -1803,6 +2366,11 @@ void ClientGameplay::shutdown()
 {
 	clearPaintTextures(*this, playerPaintTextures);
 	clearRemotePlayers(*this);
+	hunterHidePhaseForcedPaintMode = false;
+	transientTopMessage.clear();
+	transientTopMessageTimer = 0.0f;
+	lastSeenRoundResult = ClientNetworking::RoundResult::None;
+	lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
 	clientNetworking.shutdown();
 	playerPhysics.shutdown();
 }

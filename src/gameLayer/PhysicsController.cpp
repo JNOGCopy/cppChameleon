@@ -10,11 +10,14 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceTable.h>
 #include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterTable.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/ObjectLayerPairFilterTable.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
 #include <gl3d.h>
@@ -53,6 +56,8 @@ namespace
 
 	constexpr float cCharacterHeightStanding = 1.35f;
 	constexpr float cCharacterRadiusStanding = 0.30f;
+	constexpr float cHunterScale = 2.0f;
+	constexpr float cHunterSpeedMultiplier = 1.5f;
 	constexpr float cWalkSpeed = 9.0f;
 	constexpr float cRunSpeed = 17.0f;
 	constexpr float cJumpSpeed = 7.25f;
@@ -344,9 +349,10 @@ bool PhysicsController::init()
 		Vec3(0.0f, 0.5f * cCharacterHeightStanding + cCharacterRadiusStanding, 0.0f),
 		Quat::sIdentity(),
 		new CapsuleShape(0.5f * cCharacterHeightStanding, cCharacterRadiusStanding)).Create().Get();
+	hunterShape_ = ScaledShapeSettings(standingShape_, Vec3::sReplicate(cHunterScale)).Create().Get();
 
 	Ref<CharacterVirtualSettings> settings = new CharacterVirtualSettings();
-	settings->mShape = standingShape_;
+	settings->mShape = hunterModeEnabled_ ? hunterShape_ : standingShape_;
 	settings->mMass = 80.0f;
 	settings->mMaxSlopeAngle = DegreesToRadians(50.0f);
 	settings->mMaxStrength = 100.0f;
@@ -408,6 +414,9 @@ void PhysicsController::shutdown()
 	standingShape_ = nullptr;
 	facingYaw_ = 0.0f;
 	wallAttached_ = false;
+	hunterShape_ = nullptr;
+	hunterModeEnabled_ = false;
+	spawnPosition_ = {};
 	initialized_ = false;
 
 	if (Factory::sInstance != nullptr)
@@ -474,12 +483,81 @@ bool PhysicsController::setStaticMapCollision(const char *modelPath, float impor
 
 	mapBodyId_ = bodyInterface.CreateAndAddBody(mapSettings, EActivation::DontActivate);
 	physicsSystem_->OptimizeBroadPhase();
+	spawnPosition_ = spawnPosition;
 
 	if (character_ && tempAllocator_)
 	{
-		character_->SetPosition(RVec3(spawnPosition.x, spawnPosition.y, spawnPosition.z));
-		character_->SetLinearVelocity(Vec3::sZero());
+		resetToSpawn();
+	}
 
+	return !mapBodyId_.IsInvalid();
+}
+
+bool PhysicsController::raycastStaticGeometry(const glm::vec3 &origin, const glm::vec3 &direction,
+	float maxDistance, float &hitDistance) const
+{
+	hitDistance = maxDistance;
+
+	if (!initialized_ || !physicsSystem_ || maxDistance <= 0.0f)
+	{
+		return false;
+	}
+
+	const float directionLength = glm::length(direction);
+	if (directionLength <= 0.0001f)
+	{
+		return false;
+	}
+
+	const glm::vec3 normalizedDirection = direction / directionLength;
+	const RRayCast ray(
+		RVec3(origin.x, origin.y, origin.z),
+		toJolt(normalizedDirection * maxDistance));
+	RayCastResult hitResult;
+
+	if (!physicsSystem_->GetNarrowPhaseQuery().CastRay(
+		ray,
+		hitResult,
+		physicsSystem_->GetDefaultBroadPhaseLayerFilter(cNonMovingLayer),
+		physicsSystem_->GetDefaultLayerFilter(cNonMovingLayer)))
+	{
+		return false;
+	}
+
+	hitDistance = hitResult.mFraction * maxDistance;
+	return true;
+}
+
+void PhysicsController::setHunterMode(bool hunterMode)
+{
+	if (hunterModeEnabled_ == hunterMode)
+	{
+		return;
+	}
+
+	hunterModeEnabled_ = hunterMode;
+
+	if (!initialized_ || !character_ || !physicsSystem_ || !tempAllocator_)
+	{
+		return;
+	}
+
+	const Shape *targetShape = hunterModeEnabled_ ? hunterShape_.GetPtr() : standingShape_.GetPtr();
+	if (!targetShape)
+	{
+		return;
+	}
+
+	if (character_->SetShape(
+		targetShape,
+		FLT_MAX,
+		physicsSystem_->GetDefaultBroadPhaseLayerFilter(cMovingLayer),
+		physicsSystem_->GetDefaultLayerFilter(cMovingLayer),
+		{},
+		{},
+		*tempAllocator_))
+	{
+		character_->SetInnerBodyShape(targetShape);
 		character_->RefreshContacts(
 			physicsSystem_->GetDefaultBroadPhaseLayerFilter(cMovingLayer),
 			physicsSystem_->GetDefaultLayerFilter(cMovingLayer),
@@ -487,8 +565,27 @@ bool PhysicsController::setStaticMapCollision(const char *modelPath, float impor
 			{},
 			*tempAllocator_);
 	}
+}
 
-	return !mapBodyId_.IsInvalid();
+void PhysicsController::resetToSpawn()
+{
+	if (!initialized_ || !character_ || !physicsSystem_ || !tempAllocator_)
+	{
+		return;
+	}
+
+	character_->SetPosition(RVec3(spawnPosition_.x, spawnPosition_.y, spawnPosition_.z));
+	character_->SetLinearVelocity(Vec3::sZero());
+	facingYaw_ = 0.0f;
+	wallAttached_ = false;
+	character_->SetRotation(Quat::sRotation(Vec3::sAxisY(), facingYaw_));
+
+	character_->RefreshContacts(
+		physicsSystem_->GetDefaultBroadPhaseLayerFilter(cMovingLayer),
+		physicsSystem_->GetDefaultLayerFilter(cMovingLayer),
+		{},
+		{},
+		*tempAllocator_);
 }
 
 void PhysicsController::update(float deltaTime, const PhysicsControllerInput &input)
@@ -505,8 +602,10 @@ void PhysicsController::update(float deltaTime, const PhysicsControllerInput &in
 	const Vec3 currentVelocity = character->GetLinearVelocity();
 	const Vec3 currentVerticalVelocity = currentVelocity.Dot(up) * up;
 	const Vec3 groundVelocity = character->GetGroundVelocity();
+	const float moveSpeed = (input.wantsToRun ? cRunSpeed : cWalkSpeed)
+		* (hunterModeEnabled_ ? cHunterSpeedMultiplier : 1.0f);
 	Vec3 desiredHorizontalVelocity = character->CancelVelocityTowardsSteepSlopes(
-		toJolt(input.moveDirection) * (input.wantsToRun ? cRunSpeed : cWalkSpeed));
+		toJolt(input.moveDirection) * moveSpeed);
 	const Vec3 gravity = physicsSystem_->GetGravity();
 	Vec3 wallNormal = Vec3::sZero();
 	const bool hasWallContact = tryGetWallContact(*character, wallNormal);
@@ -602,6 +701,11 @@ glm::vec3 PhysicsController::getPlayerPosition() const
 	}
 
 	return toGlm(character_->GetPosition());
+}
+
+glm::vec3 PhysicsController::getSpawnPosition() const
+{
+	return spawnPosition_;
 }
 
 glm::vec3 PhysicsController::getPlayerVelocity() const

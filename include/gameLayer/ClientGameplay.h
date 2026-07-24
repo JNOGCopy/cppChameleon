@@ -11,6 +11,7 @@
 #include <glm/vec3.hpp>
 
 #include <map>
+#include <string>
 #include <vector>
 
 struct ClientGameplay
@@ -72,7 +73,7 @@ struct ClientGameplay
 	ClientNetworking clientNetworking;
 	std::map<std::uint64_t, RemotePlayerVisual> remotePlayers;
 
-	CameraMode cameraMode = CameraMode::Free;
+	CameraMode cameraMode = CameraMode::ThirdPerson;
 	float thirdPersonYaw = 0.0f;
 	float thirdPersonPitch = -0.31415927f;
 	float thirdPersonCameraDistance = 7.5f;
@@ -95,4 +96,9 @@ struct ClientGameplay
 	Packet_PlayerStateUpdate lastSentPlayerState = {};
 	float timeSinceLastPaintTextureSync = 0.0f;
 	bool localPaintTexturesDirty = false;
+	bool hunterHidePhaseForcedPaintMode = false;
+	std::string transientTopMessage;
+	float transientTopMessageTimer = 0.0f;
+	ClientNetworking::RoundResult lastSeenRoundResult = ClientNetworking::RoundResult::None;
+	ClientNetworking::RoundPhase lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
 };

@@ -32,6 +32,16 @@ namespace
 		service.connectionState = state;
 		service.lastStatus = std::move(status);
 	}
+
+	ClientNetworking::RoundPhase decodeRoundPhase(std::uint32_t roundPhase)
+	{
+		switch (roundPhase)
+		{
+		case roundPhaseHiderHide: return ClientNetworking::RoundPhase::HiderHide;
+		case roundPhaseHunterSearch: return ClientNetworking::RoundPhase::HunterSearch;
+		default: return ClientNetworking::RoundPhase::Lobby;
+		}
+	}
 }
 
 bool ClientNetworking::connectToServer(const char *serverAddress)
@@ -41,8 +51,15 @@ bool ClientNetworking::connectToServer(const char *serverAddress)
 	connectedServerAddress = (serverAddress && serverAddress[0]) ? serverAddress : "localhost";
 	receivedPlayerData = false;
 	localCID = 0;
+	gameActive = false;
+	hunterCID = 0;
+	roundPhase = RoundPhase::Lobby;
+	roundTimerRemainingSeconds = 0.0f;
+	localPlayerFound = false;
+	roundResult = RoundResult::None;
 	remotePlayers.clear();
 	remotePaintUpdates.clear();
+	foundHiderIDs.clear();
 
 	client = enet_host_create(nullptr, 1, SERVER_CHANNELS, 0, 0);
 	if (!client)
@@ -126,6 +143,13 @@ bool ClientNetworking::connectToServer(const char *serverAddress)
 			serverPeer = nullptr;
 			receivedPlayerData = false;
 			localCID = 0;
+			gameActive = false;
+			hunterCID = 0;
+			roundPhase = RoundPhase::Lobby;
+			roundTimerRemainingSeconds = 0.0f;
+			localPlayerFound = false;
+			roundResult = RoundResult::None;
+			foundHiderIDs.clear();
 			destroyClientHost(*this);
 			setConnectionState(*this, ConnectionState::Failed, "Disconnected before receiving player data.");
 			return false;
@@ -156,6 +180,28 @@ bool ClientNetworking::sendPlayerState(const Packet_PlayerStateUpdate &playerSta
 		sizeof(playerState),
 		reliable,
 		CHANNEL_GAMEPLAY);
+
+	return true;
+}
+
+bool ClientNetworking::sendHunterHitPlayer(std::uint64_t targetCID)
+{
+	if (!client || !serverPeer || connectionState != ConnectionState::Connected || localCID == 0 || targetCID == 0)
+	{
+		return false;
+	}
+
+	Packet_HunterHitPlayer hitPacket = {};
+	hitPacket.targetCID = targetCID;
+
+	sendPacket(
+		serverPeer,
+		headerHunterHitPlayer,
+		localCID,
+		(void *)&hitPacket,
+		sizeof(hitPacket),
+		true,
+		CHANNEL_CONNECTIONS);
 
 	return true;
 }
@@ -196,7 +242,7 @@ bool ClientNetworking::sendPaintTextureUpdate(int meshIndex, glm::ivec2 size, in
 	return true;
 }
 
-void ClientNetworking::update()
+void ClientNetworking::update(float deltaTime)
 {
 	if (!client)
 	{
@@ -231,8 +277,15 @@ void ClientNetworking::update()
 			serverPeer = nullptr;
 			receivedPlayerData = false;
 			localCID = 0;
+			gameActive = false;
+			hunterCID = 0;
+			roundPhase = RoundPhase::Lobby;
+			roundTimerRemainingSeconds = 0.0f;
+			localPlayerFound = false;
+			roundResult = RoundResult::None;
 			remotePlayers.clear();
 			remotePaintUpdates.clear();
+			foundHiderIDs.clear();
 			setConnectionState(*this, ConnectionState::Disconnected, "Disconnected from server.");
 			break;
 		}
@@ -240,6 +293,11 @@ void ClientNetworking::update()
 		default:
 			break;
 		}
+	}
+
+	if (gameActive && roundPhase != RoundPhase::Lobby && deltaTime > 0.0f)
+	{
+		roundTimerRemainingSeconds = (std::max)(0.0f, roundTimerRemainingSeconds - deltaTime);
 	}
 }
 
@@ -250,8 +308,15 @@ void ClientNetworking::shutdown()
 	lastStatus = "Disconnected";
 	localCID = 0;
 	receivedPlayerData = false;
+	gameActive = false;
+	hunterCID = 0;
+	roundPhase = RoundPhase::Lobby;
+	roundTimerRemainingSeconds = 0.0f;
+	localPlayerFound = false;
+	roundResult = RoundResult::None;
 	remotePlayers.clear();
 	remotePaintUpdates.clear();
+	foundHiderIDs.clear();
 }
 
 void ClientNetworking::receiveDataFromServer(ENetEvent &event)
@@ -293,6 +358,85 @@ void ClientNetworking::receiveDataFromServer(ENetEvent &event)
 			localCID = receivedPacket.yourCID;
 			receivedPlayerData = true;
 			setConnectionState(*this, ConnectionState::Connected, "Received player data from server.");
+		}
+		break;
+	}
+
+	case headerGameStateUpdate:
+	{
+		if (payloadSize >= sizeof(Packet_GameStateUpdate))
+		{
+			const bool wasGameActive = gameActive;
+			const RoundPhase previousRoundPhase = roundPhase;
+			const auto &receivedPacket = *reinterpret_cast<const Packet_GameStateUpdate *>(payload);
+			gameActive = receivedPacket.gameActive != 0;
+			hunterCID = receivedPacket.hunterCID;
+			roundPhase = gameActive ? decodeRoundPhase(receivedPacket.roundPhase) : RoundPhase::Lobby;
+			roundTimerRemainingSeconds = gameActive ? static_cast<float>(receivedPacket.timerSeconds) : 0.0f;
+
+			const bool enteredHidePhase = roundPhase == RoundPhase::HiderHide
+				&& (!wasGameActive || previousRoundPhase != RoundPhase::HiderHide);
+			if (enteredHidePhase)
+			{
+				localPlayerFound = false;
+				roundResult = RoundResult::None;
+				foundHiderIDs.clear();
+			}
+			else
+			{
+				localPlayerFound = false;
+				foundHiderIDs.clear();
+			}
+
+			if (!gameActive)
+			{
+				lastStatus = "Game ended.";
+			}
+			else if (roundPhase == RoundPhase::HiderHide)
+			{
+				lastStatus = "Hide time started. Hunter CID: " + std::to_string(hunterCID) + ".";
+			}
+			else if (roundPhase == RoundPhase::HunterSearch)
+			{
+				lastStatus = "Hunter search started. Hunter CID: " + std::to_string(hunterCID) + ".";
+			}
+			else
+			{
+				lastStatus = "Game started. Hunter CID: " + std::to_string(hunterCID) + ".";
+			}
+		}
+		break;
+	}
+
+	case headerPlayerFoundNotification:
+	{
+		if (payloadSize >= sizeof(Packet_PlayerFoundNotification))
+		{
+			const auto &receivedPacket = *reinterpret_cast<const Packet_PlayerFoundNotification *>(payload);
+			if (receivedPacket.targetCID != 0 && !isPlayerFound(receivedPacket.targetCID))
+			{
+				foundHiderIDs.push_back(receivedPacket.targetCID);
+			}
+
+			if (receivedPacket.targetCID == localCID)
+			{
+				localPlayerFound = true;
+				lastStatus = "You were hit by the hunter.";
+			}
+		}
+		break;
+	}
+
+	case headerRoundResult:
+	{
+		if (payloadSize >= sizeof(Packet_RoundResult))
+		{
+			const auto &receivedPacket = *reinterpret_cast<const Packet_RoundResult *>(payload);
+			if (receivedPacket.result == roundResultHunterWon)
+			{
+				roundResult = RoundResult::HunterWon;
+				lastStatus = "Hunter won the round.";
+			}
 		}
 		break;
 	}
@@ -345,6 +489,9 @@ void ClientNetworking::receiveDataFromServer(ENetEvent &event)
 			const auto &receivedPacket = *reinterpret_cast<const Packet_ClientDisconnected *>(payload);
 			remotePlayers.erase(receivedPacket.cid);
 			remotePaintUpdates.erase(receivedPacket.cid);
+			foundHiderIDs.erase(
+				std::remove(foundHiderIDs.begin(), foundHiderIDs.end(), receivedPacket.cid),
+				foundHiderIDs.end());
 		}
 		break;
 	}
@@ -355,6 +502,21 @@ void ClientNetworking::receiveDataFromServer(ENetEvent &event)
 	}
 
 	delete[] ownedDecompressedData;
+}
+
+bool ClientNetworking::isHunter(std::uint64_t cid) const
+{
+	return gameActive && cid != 0 && cid == hunterCID;
+}
+
+bool ClientNetworking::isLocalHunter() const
+{
+	return isHunter(localCID);
+}
+
+bool ClientNetworking::isPlayerFound(std::uint64_t cid) const
+{
+	return std::find(foundHiderIDs.begin(), foundHiderIDs.end(), cid) != foundHiderIDs.end();
 }
 
 const char *ClientNetworking::getConnectionStateName() const

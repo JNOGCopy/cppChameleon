@@ -33,6 +33,10 @@ enum: std::uint32_t
 {
 	headerNone = 0,
 	headerReceiveCIDAndData,
+	headerGameStateUpdate,
+	headerHunterHitPlayer,
+	headerPlayerFoundNotification,
+	headerRoundResult,
 	headerPlayerStateUpdate,
 	headerPlayerPaintTextureUpdate,
 	headerClientDisconnected,
@@ -50,6 +54,44 @@ struct Packet_PlayerStateUpdate
 	glm::vec3 position = {};
 	float yaw = 0.0f;
 	std::int32_t animationIndex = 0;
+};
+
+struct Packet_GameStateUpdate
+{
+	std::uint32_t gameActive = 0;
+	std::uint64_t hunterCID = 0;
+	std::uint32_t roundPhase = 0;
+	std::uint32_t timerSeconds = 0;
+};
+
+struct Packet_HunterHitPlayer
+{
+	std::uint64_t targetCID = 0;
+};
+
+struct Packet_PlayerFoundNotification
+{
+	std::uint64_t hunterCID = 0;
+	std::uint64_t targetCID = 0;
+};
+
+enum : std::uint32_t
+{
+	roundResultNone = 0,
+	roundResultHunterWon = 1,
+};
+
+enum : std::uint32_t
+{
+	roundPhaseLobby = 0,
+	roundPhaseHiderHide = 1,
+	roundPhaseHunterSearch = 2,
+};
+
+struct Packet_RoundResult
+{
+	std::uint32_t result = roundResultNone;
+	std::uint64_t winnerCID = 0;
 };
 
 struct Packet_ClientDisconnected

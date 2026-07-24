@@ -39,10 +39,15 @@ public:
 	bool init();
 	void shutdown();
 	bool setStaticMapCollision(const char *modelPath, float importScale, const gl3d::Transform &transform);
+	void setHunterMode(bool hunterMode);
+	bool raycastStaticGeometry(const glm::vec3 &origin, const glm::vec3 &direction,
+		float maxDistance, float &hitDistance) const;
+	void resetToSpawn();
 
 	void update(float deltaTime, const PhysicsControllerInput &input);
 
 	glm::vec3 getPlayerPosition() const;
+	glm::vec3 getSpawnPosition() const;
 	glm::vec3 getPlayerVelocity() const;
 	float getPlayerYaw() const;
 	bool isGrounded() const;
@@ -62,6 +67,9 @@ private:
 	JPH::BodyID groundBodyId_;
 	JPH::BodyID mapBodyId_;
 	JPH::RefConst<JPH::Shape> standingShape_;
+	JPH::RefConst<JPH::Shape> hunterShape_;
 	float facingYaw_ = 0.0f;
 	bool wallAttached_ = false;
+	bool hunterModeEnabled_ = false;
+	glm::vec3 spawnPosition_ = {};
 };
