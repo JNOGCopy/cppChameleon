@@ -1,5 +1,6 @@
 #include "gameLayer.h"
 #include "ClientGameplay.h"
+#include "GameMaps.h"
 #include "ServerGameplay.h"
 
 #include <enet/enet.h>
@@ -19,6 +20,7 @@ gl2d::Texture uiTexture;
 gl2d::Font font;
 char serverIpAddress[128] = "localhost";
 int hunterIdSliderValue = 1;
+int mapIndexSliderValue = 0;
 std::string menuStatusMessage;
 bool enetInitialized = false;
 
@@ -74,6 +76,11 @@ namespace
 		{
 			hunterIdSliderValue = 1;
 		}
+	}
+
+	void syncMapIndexSliderToServerSelection()
+	{
+		mapIndexSliderValue = static_cast<int>(clampGameMapIndex(serverGameplay.currentMapIndex));
 	}
 
 	std::string buildConnectedIdsText()
@@ -172,6 +179,7 @@ bool gameLogic(float deltaTime, platform::Input &input)
 			if (serverGameplay.init())
 			{
 				syncHunterIdSliderToServerSelection();
+				syncMapIndexSliderToServerSelection();
 				currentGameState = inServer;
 				menuStatusMessage.clear();
 			}
@@ -202,7 +210,11 @@ bool gameLogic(float deltaTime, platform::Input &input)
 	{
 		serverGameplay.update();
 		const int hunterIdSliderMax = getHunterIdSliderMax();
+		const int mapIndexSliderMax = (std::max)(0, static_cast<int>(getGameMapCount()) - 1);
 		hunterIdSliderValue = std::clamp(hunterIdSliderValue, 1, hunterIdSliderMax);
+		mapIndexSliderValue = std::clamp(mapIndexSliderValue, 0, mapIndexSliderMax);
+		const GameMapDefinition &selectedMapDefinition = getGameMapDefinition(static_cast<std::uint32_t>(mapIndexSliderValue));
+		const GameMapDefinition &currentMapDefinition = getGameMapDefinition(serverGameplay.currentMapIndex);
 
 		rendererUI.Begin(1);
 		rendererUI.Text("Server running on port 7769", Colors_White);
@@ -210,8 +222,11 @@ bool gameLogic(float deltaTime, platform::Input &input)
 		rendererUI.Text("Game state: " + std::string(serverGameplay.gameActive ? "Running" : "Lobby"), Colors_White);
 		rendererUI.Text("Round phase: " + std::string(serverGameplay.getRoundPhaseName()), Colors_White);
 		rendererUI.Text("Round timer: " + std::to_string(serverGameplay.getCurrentRoundTimerSeconds()) + "s", Colors_White);
+		rendererUI.Text("Current map: " + std::string(currentMapDefinition.displayName), Colors_White);
 		rendererUI.Text("Connected IDs: " + buildConnectedIdsText(), Colors_White);
 		rendererUI.sliderInt("hunter ID: ", &hunterIdSliderValue, 1, hunterIdSliderMax, Colors_White);
+		rendererUI.sliderInt("map index: ", &mapIndexSliderValue, 0, mapIndexSliderMax, Colors_White);
+		rendererUI.Text("Selected map: " + std::string(selectedMapDefinition.displayName), Colors_White);
 		rendererUI.sliderInt("hider timer (s): ", &serverGameplay.hiderTimerSeconds, 0, 500, Colors_White);
 		rendererUI.sliderInt("hunter timer (s): ", &serverGameplay.hunterTimerSeconds, 0, 500, Colors_White);
 
@@ -219,6 +234,12 @@ bool gameLogic(float deltaTime, platform::Input &input)
 		{
 			serverGameplay.setHunterCID(resolveHunterIdSliderSelection());
 			syncHunterIdSliderToServerSelection();
+		}
+
+		if (rendererUI.Button("Apply map", Colors_White, uiTexture))
+		{
+			serverGameplay.setCurrentMapIndex(static_cast<std::uint32_t>(mapIndexSliderValue));
+			syncMapIndexSliderToServerSelection();
 		}
 
 		if (!serverGameplay.gameActive)
@@ -229,10 +250,19 @@ bool gameLogic(float deltaTime, platform::Input &input)
 				syncHunterIdSliderToServerSelection();
 			}
 		}
-		else if (rendererUI.Button("End game", Colors_White, uiTexture))
+		else
 		{
-			serverGameplay.endGame();
-			syncHunterIdSliderToServerSelection();
+			if (serverGameplay.roundPhase == roundPhaseHiderHide
+				&& rendererUI.Button("Skip hide time", Colors_White, uiTexture))
+			{
+				serverGameplay.skipHiderHidePhase();
+			}
+
+			if (rendererUI.Button("End game", Colors_White, uiTexture))
+			{
+				serverGameplay.endGame();
+				syncHunterIdSliderToServerSelection();
+			}
 		}
 
 		rendererUI.Text(serverGameplay.lastStatus, Colors_White);

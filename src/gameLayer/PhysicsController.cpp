@@ -56,7 +56,7 @@ namespace
 
 	constexpr float cCharacterHeightStanding = 1.35f;
 	constexpr float cCharacterRadiusStanding = 0.30f;
-	constexpr float cHunterScale = 2.0f;
+	constexpr float cHunterScale = 1.75f;
 	constexpr float cHunterSpeedMultiplier = 1.5f;
 	constexpr float cWalkSpeed = 9.0f;
 	constexpr float cRunSpeed = 17.0f;

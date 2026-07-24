@@ -25,7 +25,9 @@ struct ServerGameplay
 
 	bool startGame(std::uint64_t requestedHunterCID);
 	void endGame();
+	bool skipHiderHidePhase();
 	bool setHunterCID(std::uint64_t requestedHunterCID);
+	void setCurrentMapIndex(std::uint32_t newMapIndex);
 	bool hasConnectedClient(std::uint64_t cid) const;
 	bool isHiderFound(std::uint64_t cid) const;
 	std::size_t getRemainingHiderCount() const;
@@ -47,6 +49,7 @@ struct ServerGameplay
 	std::uint32_t connectedClients = 0;
 	bool gameActive = false;
 	std::uint64_t hunterCID = 0;
+	std::uint32_t currentMapIndex = 0;
 	int hiderTimerSeconds = 30;
 	int hunterTimerSeconds = 120;
 	std::uint32_t roundPhase = roundPhaseLobby;

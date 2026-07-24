@@ -11,6 +11,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -34,7 +35,7 @@ namespace
 	constexpr float THIRD_PERSON_CAMERA_DISTANCE_MAX = 12.0f;
 	constexpr float THIRD_PERSON_CAMERA_ZOOM_STEP = 0.85f;
 	constexpr float THIRD_PERSON_CAMERA_TARGET_HEIGHT = 1.45f;
-	constexpr float HUNTER_VISUAL_SCALE = 2.0f;
+	constexpr float HUNTER_VISUAL_SCALE = 1.75f;
 	const float THIRD_PERSON_PITCH_MIN = glm::radians(-70.0f);
 	const float THIRD_PERSON_PITCH_MAX = glm::radians(35.0f);
 	constexpr int PLAYER_PAINT_BRUSH_RADIUS_DEFAULT = 6;
@@ -57,7 +58,8 @@ namespace
 	constexpr float REMOTE_PLAYER_SNAP_DISTANCE = 4.0f;
 	constexpr float HUNTER_SHOT_MAX_DISTANCE = 120.0f;
 	constexpr float PLAYER_RAYCAST_SPHERE_RADIUS = 0.38f;
-	constexpr float HUNTER_FOUND_MESSAGE_DURATION = 3.0f;
+	constexpr char HUNTER_FOUND_MESSAGE_TEXT[] = "You found cameleon!";
+	constexpr float HUNTER_FOUND_MESSAGE_DURATION = 1.0f;
 	constexpr float ROUND_RESULT_MESSAGE_DURATION = 4.0f;
 
 	using PlayerPaintTexture = ClientGameplay::PlayerPaintTexture;
@@ -65,6 +67,105 @@ namespace
 	using PaintColorSlider = ClientGameplay::PaintColorSlider;
 	using PaintDebugState = ClientGameplay::PaintDebugState;
 	using RemotePlayerVisual = ClientGameplay::RemotePlayerVisual;
+
+	glm::vec3 toGlmPosition(const objl::Vector3 &value)
+	{
+		return {value.X, value.Y, value.Z};
+	}
+
+	std::string buildMapCenterCacheKey(const GameMapDefinition &mapDefinition)
+	{
+		std::ostringstream key;
+		key
+			<< mapDefinition.modelFile << '|'
+			<< mapDefinition.importScale << '|'
+			<< mapDefinition.rotationDegrees.x << '|'
+			<< mapDefinition.rotationDegrees.y << '|'
+			<< mapDefinition.rotationDegrees.z;
+		return key.str();
+	}
+
+	bool computeMapHorizontalCenter(const GameMapDefinition &mapDefinition, glm::vec3 &outCenter)
+	{
+		static std::map<std::string, glm::vec3> cachedCenters;
+
+		const std::string cacheKey = buildMapCenterCacheKey(mapDefinition);
+		if (auto found = cachedCenters.find(cacheKey); found != cachedCenters.end())
+		{
+			outCenter = found->second;
+			return true;
+		}
+
+		gl3d::ErrorReporter errorReporter;
+		gl3d::FileOpener fileOpener;
+		gl3d::LoadedModelData loadedModel(mapDefinition.modelFile, errorReporter, fileOpener, mapDefinition.importScale);
+		if (loadedModel.loader.LoadedMeshes.empty())
+		{
+			return false;
+		}
+
+		gl3d::Transform rotationTransform = {};
+		rotationTransform.rotation = {
+			glm::radians(mapDefinition.rotationDegrees.x),
+			glm::radians(mapDefinition.rotationDegrees.y),
+			glm::radians(mapDefinition.rotationDegrees.z)
+		};
+		const glm::mat4 rotationMatrix = gl3d::getTransformMatrix(rotationTransform);
+
+		glm::vec3 minBounds(FLT_MAX);
+		glm::vec3 maxBounds(-FLT_MAX);
+		bool foundAnyVertex = false;
+
+		const auto accumulateBounds = [&](const glm::vec3 &position)
+		{
+			const glm::vec3 transformedPosition = glm::vec3(rotationMatrix * glm::vec4(position, 1.0f));
+			minBounds = glm::min(minBounds, transformedPosition);
+			maxBounds = glm::max(maxBounds, transformedPosition);
+			foundAnyVertex = true;
+		};
+
+		for (const auto &mesh : loadedModel.loader.LoadedMeshes)
+		{
+			for (const auto &vertex : mesh.Vertices)
+			{
+				accumulateBounds(toGlmPosition(vertex.Position));
+			}
+
+			for (const auto &vertex : mesh.VerticesAnimations)
+			{
+				accumulateBounds(toGlmPosition(vertex.Position));
+			}
+		}
+
+		if (!foundAnyVertex)
+		{
+			return false;
+		}
+
+		outCenter = (minBounds + maxBounds) * 0.5f;
+		cachedCenters[cacheKey] = outCenter;
+		return true;
+	}
+
+	gl3d::Transform buildMapTransform(const GameMapDefinition &mapDefinition)
+	{
+		gl3d::Transform transform = {};
+		transform.position = mapDefinition.position;
+		transform.rotation = {
+			glm::radians(mapDefinition.rotationDegrees.x),
+			glm::radians(mapDefinition.rotationDegrees.y),
+			glm::radians(mapDefinition.rotationDegrees.z)
+		};
+
+		glm::vec3 computedCenter = {};
+		if (computeMapHorizontalCenter(mapDefinition, computedCenter))
+		{
+			transform.position.x -= computedCenter.x;
+			transform.position.z -= computedCenter.z;
+		}
+
+		return transform;
+	}
 }
 
 #define USE_GPU 1
@@ -1243,26 +1344,15 @@ void resetEntityPaintTexturesToModelDefaults(ClientGameplay &gameplay, gl3d::Ent
 	setupEntityPaintTextures(gameplay, entity, paintTextures, setAsPaintTarget);
 }
 
-void resetClientRoundStartState(ClientGameplay &gameplay)
+void resetClientPositionsToSpawn(ClientGameplay &gameplay)
 {
 	auto &clientNetworking = gameplay.clientNetworking;
 	auto &playerPhysics = gameplay.playerPhysics;
-	auto &playerEntity = gameplay.playerEntity;
-	auto &playerModel = gameplay.playerModel;
-	auto &playerPaintTextures = gameplay.playerPaintTextures;
 	auto &remotePlayers = gameplay.remotePlayers;
 
 	playerPhysics.resetToSpawn();
 	const glm::vec3 spawnPosition = playerPhysics.getSpawnPosition();
 
-	resetEntityPaintTexturesToModelDefaults(
-		gameplay,
-		playerEntity,
-		playerModel,
-		playerPaintTextures,
-		true);
-
-	clientNetworking.remotePaintUpdates.clear();
 	for (auto &[cid, remoteState] : clientNetworking.remotePlayers)
 	{
 		(void)cid;
@@ -1274,16 +1364,6 @@ void resetClientRoundStartState(ClientGameplay &gameplay)
 	for (auto &[cid, remotePlayer] : remotePlayers)
 	{
 		(void)cid;
-		if (gameplay.renderer3D.isEntity(remotePlayer.entity))
-		{
-			resetEntityPaintTexturesToModelDefaults(
-				gameplay,
-				remotePlayer.entity,
-				playerModel,
-				remotePlayer.paintTextures,
-				false);
-		}
-
 		remotePlayer.visualPosition = spawnPosition;
 		remotePlayer.visualYaw = 0.0f;
 		remotePlayer.hasVisualState = true;
@@ -1299,6 +1379,96 @@ void resetClientRoundStartState(ClientGameplay &gameplay)
 	gameplay.paintColorPickModeActive = false;
 	gameplay.paintDebugState = {};
 	resetPaintStrokeState(gameplay);
+}
+
+void resetClientRoundStartState(ClientGameplay &gameplay)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+	auto &playerEntity = gameplay.playerEntity;
+	auto &playerModel = gameplay.playerModel;
+	auto &playerPaintTextures = gameplay.playerPaintTextures;
+	auto &remotePlayers = gameplay.remotePlayers;
+
+	resetClientPositionsToSpawn(gameplay);
+	resetEntityPaintTexturesToModelDefaults(
+		gameplay,
+		playerEntity,
+		playerModel,
+		playerPaintTextures,
+		true);
+
+	clientNetworking.remotePaintUpdates.clear();
+	for (auto &[cid, remotePlayer] : remotePlayers)
+	{
+		(void)cid;
+		if (gameplay.renderer3D.isEntity(remotePlayer.entity))
+		{
+			resetEntityPaintTexturesToModelDefaults(
+				gameplay,
+				remotePlayer.entity,
+				playerModel,
+				remotePlayer.paintTextures,
+				false);
+		}
+	}
+}
+
+bool loadMapByIndex(ClientGameplay &gameplay, std::uint32_t mapIndex, bool resetPlayersToSpawn)
+{
+	auto &renderer3D = gameplay.renderer3D;
+	auto &mapEntity = gameplay.mapEntity;
+	auto &mapModel = gameplay.mapModel;
+	auto &loadedMapModels = gameplay.loadedMapModels;
+	auto &playerPhysics = gameplay.playerPhysics;
+
+	const std::uint32_t resolvedMapIndex = clampGameMapIndex(mapIndex);
+	const GameMapDefinition &mapDefinition = getGameMapDefinition(resolvedMapIndex);
+	const gl3d::Transform mapTransform = buildMapTransform(mapDefinition);
+
+	if (renderer3D.isEntity(mapEntity))
+	{
+		renderer3D.deleteEntity(mapEntity);
+	}
+
+	if (loadedMapModels.size() < getGameMapCount())
+	{
+		loadedMapModels.resize(getGameMapCount());
+	}
+
+	gl3d::Model &cachedMapModel = loadedMapModels[resolvedMapIndex];
+	if (!renderer3D.isModel(cachedMapModel))
+	{
+		cachedMapModel = renderer3D.loadModel(mapDefinition.modelFile, gl3d::maxQuality, mapDefinition.importScale);
+	}
+
+	mapModel = cachedMapModel;
+	if (!renderer3D.isModel(mapModel))
+	{
+		return false;
+	}
+
+	mapEntity = renderer3D.createEntity(mapModel, mapTransform, true, true, false);
+	if (!playerPhysics.setStaticMapCollision(mapDefinition.modelFile, mapDefinition.importScale, mapTransform))
+	{
+		if (renderer3D.isEntity(mapEntity))
+		{
+			renderer3D.deleteEntity(mapEntity);
+		}
+		mapEntity = {};
+		return false;
+	}
+
+	gameplay.loadedMapIndex = resolvedMapIndex;
+	gameplay.hasLoadedMap = true;
+
+	if (resetPlayersToSpawn)
+	{
+		resetClientPositionsToSpawn(gameplay);
+		gameplay.transientTopMessage.clear();
+		gameplay.transientTopMessageTimer = 0.0f;
+	}
+
+	return true;
 }
 
 bool paintInterpolatedStrokeScreenSpace(ClientGameplay &gameplay,
@@ -1880,7 +2050,7 @@ void handleHunterShotInput(ClientGameplay &gameplay, const platform::Input &inpu
 	if (tryFindHunterShotTarget(gameplay, targetCID)
 		&& clientNetworking.sendHunterHitPlayer(targetCID))
 	{
-		showTransientTopMessage(gameplay, "You found someone.", HUNTER_FOUND_MESSAGE_DURATION);
+		showTransientTopMessage(gameplay, HUNTER_FOUND_MESSAGE_TEXT, HUNTER_FOUND_MESSAGE_DURATION);
 	}
 }
 
@@ -1906,6 +2076,39 @@ void renderTopStatusMessage(gl2d::Renderer2D &renderer, gl2d::Font &font, const 
 
 	renderer.renderRectangle(panel, panelColor);
 	renderer.renderRectangleOutline(panel, {0.0f, 0.0f, 0.0f, 0.92f}, 2.0f);
+	renderer.renderText(
+		{panel.x + cPaddingX, panel.y + cPaddingY + textSize.y},
+		message.c_str(),
+		font,
+		textColor,
+		cTextSize,
+		2.0f,
+		2.0f,
+		false);
+}
+
+void renderLargeTopStatusMessage(gl2d::Renderer2D &renderer, gl2d::Font &font, const std::string &message,
+	float topOffset, gl2d::Color4f panelColor, gl2d::Color4f textColor)
+{
+	if (message.empty() || font.texture.id == 0 || renderer.windowW <= 0 || renderer.windowH <= 0)
+	{
+		return;
+	}
+
+	constexpr float cTextSize = 34.0f;
+	constexpr float cPaddingX = 24.0f;
+	constexpr float cPaddingY = 14.0f;
+
+	const glm::vec2 textSize = renderer.getTextSize(message.c_str(), font, cTextSize, 2.0f, 2.0f);
+	const gl2d::Rect panel = {
+		(renderer.windowW - (textSize.x + cPaddingX * 2.0f)) * 0.5f,
+		topOffset,
+		textSize.x + cPaddingX * 2.0f,
+		textSize.y + cPaddingY * 2.0f
+	};
+
+	renderer.renderRectangle(panel, panelColor);
+	renderer.renderRectangleOutline(panel, {0.0f, 0.0f, 0.0f, 0.95f}, 3.0f);
 	renderer.renderText(
 		{panel.x + cPaddingX, panel.y + cPaddingY + textSize.y},
 		message.c_str(),
@@ -2006,16 +2209,31 @@ void renderGameplayNotifications(ClientGameplay &gameplay, gl2d::Renderer2D &ren
 	{
 		const bool roundWonMessage = clientNetworking.roundResult == ClientNetworking::RoundResult::HunterWon
 			&& transientTopMessage == "Hunter won.";
-		renderTopStatusMessage(
-			renderer,
-			font,
-			transientTopMessage,
-			topOffset,
-			roundWonMessage
-				? gl2d::Color4f{0.45f, 0.32f, 0.08f, 0.9f}
-				: gl2d::Color4f{0.12f, 0.32f, 0.18f, 0.9f},
-			Colors_White);
-		topOffset += 44.0f;
+		const bool foundCameleonMessage = transientTopMessage == HUNTER_FOUND_MESSAGE_TEXT;
+		if (foundCameleonMessage)
+		{
+			renderLargeTopStatusMessage(
+				renderer,
+				font,
+				transientTopMessage,
+				topOffset,
+				{0.10f, 0.38f, 0.12f, 0.94f},
+				Colors_White);
+			topOffset += 64.0f;
+		}
+		else
+		{
+			renderTopStatusMessage(
+				renderer,
+				font,
+				transientTopMessage,
+				topOffset,
+				roundWonMessage
+					? gl2d::Color4f{0.45f, 0.32f, 0.08f, 0.9f}
+					: gl2d::Color4f{0.12f, 0.32f, 0.18f, 0.9f},
+				Colors_White);
+			topOffset += 44.0f;
+		}
 	}
 
 	if (clientNetworking.gameActive
@@ -2074,6 +2292,9 @@ bool ClientGameplay::init(const char *serverAddress)
 	transientTopMessageTimer = 0.0f;
 	lastSeenRoundResult = ClientNetworking::RoundResult::None;
 	lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
+	loadedMapIndex = 0;
+	hasLoadedMap = false;
+	loadedMapModels.clear();
 	clearRemotePlayers(*this);
 
 	if (!clientNetworking.connectToServer(serverAddress))
@@ -2087,7 +2308,9 @@ bool ClientGameplay::init(const char *serverAddress)
 	renderer3D.init(1, 1, RESOURCES_PATH "BRDFintegrationMap.png");
 	renderer3D.frustumCulling = false;
 
-	renderer3D.skyBox = renderer3D.loadHDRSkyBox(RESOURCES_PATH "sky.hdr");
+	//renderer3D.skyBox = renderer3D.loadHDRSkyBox(RESOURCES_PATH "sky.hdr");
+	renderer3D.skyBox = renderer3D.loadSkyBox(RESOURCES_PATH "skybox.png");
+	renderer3D.skyBox.color *= 0.9f;
 
 	playerModel = renderer3D.loadModel(RESOURCES_PATH "player3.glb", gl3d::maxQuality, 1);
 
@@ -2101,34 +2324,24 @@ bool ClientGameplay::init(const char *serverAddress)
 		return false;
 	}
 
-	syncPlayerEntityToPhysics(*this);
-
-#pragma region map
-
-	if (1)
+	if (!loadMapByIndex(*this, clientNetworking.currentMapIndex, true))
 	{
-		gl3d::Transform mapTransform;
-		mapTransform.rotation.x = glm::radians(-90.f);
-		mapTransform.position.x = -90;
-		mapTransform.position.z = 120;
-
-		mapModel = renderer3D.loadModel(RESOURCES_PATH "amongusMap.glb", gl3d::maxQuality, 0.1);
-
-		mapEntity = renderer3D.createEntity(mapModel, mapTransform, true, true, false);
-		playerPhysics.setStaticMapCollision(RESOURCES_PATH "amongusMap.glb", 0.1f, mapTransform);
+		clientNetworking.shutdown();
+		playerPhysics.shutdown();
+		return false;
 	}
 
-#pragma endregion
+	syncPlayerEntityToPhysics(*this);
 
-	auto grid = platform::createGridModel(
-		renderer3D,
-		200.f,
-		41,
-		{0.35f, 0.35f, 0.38f, 1.f},
-		0.f,
-		0.f,
-		"worldGrid");
-	renderer3D.createEntity(grid.model, {}, true, true, false);
+	//auto grid = platform::createGridModel(
+	//	renderer3D,
+	//	200.f,
+	//	41,
+	//	{0.35f, 0.35f, 0.38f, 1.f},
+	//	0.f,
+	//	0.f,
+	//	"worldGrid");
+	//renderer3D.createEntity(grid.model, {}, true, true, false);
 
 	renderer3D.createDirectionalLight({0, -1, 0.3f}, glm::vec3(1, 1, 1), 1, false);
 	renderer3D.createDirectionalLight({0, -1, -0.3f}, glm::vec3(1, 1, 1), 1, false);
@@ -2156,6 +2369,16 @@ bool ClientGameplay::update(float deltaTime, platform::Input &input, gl2d::Rende
 	updateTransientGameplayMessage(*this, deltaTime);
 	renderer3D.updateWindowMetrics(w, h);
 	playerPhysics.setHunterMode(clientNetworking.isLocalHunter());
+	if (!hasLoadedMap || loadedMapIndex != clampGameMapIndex(clientNetworking.currentMapIndex))
+	{
+		if (!loadMapByIndex(*this, clientNetworking.currentMapIndex, true))
+		{
+			clientNetworking.lastStatus = "Failed to load the map selected by the server.";
+			return false;
+		}
+
+		syncPlayerEntityToPhysics(*this);
+	}
 	const bool enteredRoundStartPhase =
 		clientNetworking.roundPhase == ClientNetworking::RoundPhase::HiderHide
 		&& lastSeenRoundPhase != ClientNetworking::RoundPhase::HiderHide;
@@ -2366,11 +2589,20 @@ void ClientGameplay::shutdown()
 {
 	clearPaintTextures(*this, playerPaintTextures);
 	clearRemotePlayers(*this);
+	if (renderer3D.isEntity(mapEntity))
+	{
+		renderer3D.deleteEntity(mapEntity);
+	}
+	mapEntity = {};
+	mapModel = {};
+	loadedMapModels.clear();
 	hunterHidePhaseForcedPaintMode = false;
 	transientTopMessage.clear();
 	transientTopMessageTimer = 0.0f;
 	lastSeenRoundResult = ClientNetworking::RoundResult::None;
 	lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
+	hasLoadedMap = false;
+	loadedMapIndex = 0;
 	clientNetworking.shutdown();
 	playerPhysics.shutdown();
 }

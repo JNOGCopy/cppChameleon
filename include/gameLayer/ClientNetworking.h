@@ -68,8 +68,10 @@ struct ClientNetworking
 	std::string lastStatus = "Disconnected";
 	std::uint64_t localCID = 0;
 	bool receivedPlayerData = false;
+	bool receivedInitialGameState = false;
 	bool gameActive = false;
 	std::uint64_t hunterCID = 0;
+	std::uint32_t currentMapIndex = 0;
 	RoundPhase roundPhase = RoundPhase::Lobby;
 	float roundTimerRemainingSeconds = 0.0f;
 	bool localPlayerFound = false;

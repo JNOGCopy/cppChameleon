@@ -1,4 +1,5 @@
 #include <ServerGameplay.h>
+#include <GameMaps.h>
 #include <iostream>
 
 #include <algorithm>
@@ -70,6 +71,7 @@ namespace
 		packet.hunterCID = serverGameplay.hunterCID;
 		packet.roundPhase = serverGameplay.roundPhase;
 		packet.timerSeconds = getRoundTimerSecondsRemaining(serverGameplay);
+		packet.currentMapIndex = clampGameMapIndex(serverGameplay.currentMapIndex);
 		return packet;
 	}
 
@@ -100,6 +102,7 @@ bool ServerGameplay::init()
 	connectedClients = 0;
 	gameActive = false;
 	hunterCID = 0;
+	currentMapIndex = 0;
 	roundPhase = roundPhaseLobby;
 	roundPhaseDeadline = {};
 	roundPhaseTimerRunning = false;
@@ -171,9 +174,7 @@ void ServerGameplay::update()
 	{
 		if (roundPhase == roundPhaseHiderHide)
 		{
-			setRoundPhaseState(*this, roundPhaseHunterSearch, clampTimerSeconds(hunterTimerSeconds));
-			broadcastGameStateUpdate(*this);
-			lastStatus = "Hide time ended. Hunter released.";
+			skipHiderHidePhase();
 		}
 		else if (roundPhase == roundPhaseHunterSearch)
 		{
@@ -194,12 +195,33 @@ void ServerGameplay::close()
 	connectedClients = 0;
 	gameActive = false;
 	hunterCID = 0;
+	currentMapIndex = 0;
 	roundPhase = roundPhaseLobby;
 	roundPhaseDeadline = {};
 	roundPhaseTimerRunning = false;
 	connectedClientIDs.clear();
 	resetRoundProgress();
 	lastStatus = "Server stopped.";
+}
+
+bool ServerGameplay::skipHiderHidePhase()
+{
+	if (!server)
+	{
+		lastStatus = "Server is not running.";
+		return false;
+	}
+
+	if (!gameActive || roundPhase != roundPhaseHiderHide)
+	{
+		lastStatus = "Hide time is not currently running.";
+		return false;
+	}
+
+	setRoundPhaseState(*this, roundPhaseHunterSearch, clampTimerSeconds(hunterTimerSeconds));
+	broadcastGameStateUpdate(*this);
+	lastStatus = "Hide time skipped. Hunter released.";
+	return true;
 }
 
 std::uint64_t ServerGameplay::getIdAndIncrement()
@@ -505,6 +527,30 @@ bool ServerGameplay::setHunterCID(std::uint64_t requestedHunterCID)
 	}
 
 	return requestedCIDWasValid;
+}
+
+void ServerGameplay::setCurrentMapIndex(std::uint32_t newMapIndex)
+{
+	const std::uint32_t resolvedMapIndex = clampGameMapIndex(newMapIndex);
+	if (currentMapIndex == resolvedMapIndex)
+	{
+		lastStatus = "Map already selected: " + std::string(getGameMapDefinition(currentMapIndex).displayName) + ".";
+		return;
+	}
+
+	currentMapIndex = resolvedMapIndex;
+	gameActive = false;
+	setRoundPhaseState(*this, roundPhaseLobby, 0);
+	resetRoundProgress();
+
+	if (server)
+	{
+		broadcastGameStateUpdate(*this);
+		enet_host_flush(server);
+	}
+
+	lastStatus = "Changed map to " + std::string(getGameMapDefinition(currentMapIndex).displayName)
+		+ ". Game state reset.";
 }
 
 bool ServerGameplay::hasConnectedClient(std::uint64_t cid) const

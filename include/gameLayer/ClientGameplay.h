@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ClientNetworking.h"
+#include "GameMaps.h"
 #include "PhysicsController.h"
 #include "platformInput.h"
 
@@ -72,6 +73,7 @@ struct ClientGameplay
 	PhysicsController playerPhysics;
 	ClientNetworking clientNetworking;
 	std::map<std::uint64_t, RemotePlayerVisual> remotePlayers;
+	std::vector<gl3d::Model> loadedMapModels;
 
 	CameraMode cameraMode = CameraMode::ThirdPerson;
 	float thirdPersonYaw = 0.0f;
@@ -101,4 +103,6 @@ struct ClientGameplay
 	float transientTopMessageTimer = 0.0f;
 	ClientNetworking::RoundResult lastSeenRoundResult = ClientNetworking::RoundResult::None;
 	ClientNetworking::RoundPhase lastSeenRoundPhase = ClientNetworking::RoundPhase::Lobby;
+	std::uint32_t loadedMapIndex = 0;
+	bool hasLoadedMap = false;
 };

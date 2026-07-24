@@ -50,9 +50,11 @@ bool ClientNetworking::connectToServer(const char *serverAddress)
 
 	connectedServerAddress = (serverAddress && serverAddress[0]) ? serverAddress : "localhost";
 	receivedPlayerData = false;
+	receivedInitialGameState = false;
 	localCID = 0;
 	gameActive = false;
 	hunterCID = 0;
+	currentMapIndex = 0;
 	roundPhase = RoundPhase::Lobby;
 	roundTimerRemainingSeconds = 0.0f;
 	localPlayerFound = false;
@@ -125,7 +127,7 @@ bool ClientNetworking::connectToServer(const char *serverAddress)
 			receiveDataFromServer(event);
 			enet_packet_destroy(event.packet);
 
-			if (receivedPlayerData)
+			if (receivedPlayerData && receivedInitialGameState)
 			{
 				return true;
 			}
@@ -142,9 +144,11 @@ bool ClientNetworking::connectToServer(const char *serverAddress)
 		{
 			serverPeer = nullptr;
 			receivedPlayerData = false;
+			receivedInitialGameState = false;
 			localCID = 0;
 			gameActive = false;
 			hunterCID = 0;
+			currentMapIndex = 0;
 			roundPhase = RoundPhase::Lobby;
 			roundTimerRemainingSeconds = 0.0f;
 			localPlayerFound = false;
@@ -276,9 +280,11 @@ void ClientNetworking::update(float deltaTime)
 		{
 			serverPeer = nullptr;
 			receivedPlayerData = false;
+			receivedInitialGameState = false;
 			localCID = 0;
 			gameActive = false;
 			hunterCID = 0;
+			currentMapIndex = 0;
 			roundPhase = RoundPhase::Lobby;
 			roundTimerRemainingSeconds = 0.0f;
 			localPlayerFound = false;
@@ -308,8 +314,10 @@ void ClientNetworking::shutdown()
 	lastStatus = "Disconnected";
 	localCID = 0;
 	receivedPlayerData = false;
+	receivedInitialGameState = false;
 	gameActive = false;
 	hunterCID = 0;
+	currentMapIndex = 0;
 	roundPhase = RoundPhase::Lobby;
 	roundTimerRemainingSeconds = 0.0f;
 	localPlayerFound = false;
@@ -369,14 +377,17 @@ void ClientNetworking::receiveDataFromServer(ENetEvent &event)
 			const bool wasGameActive = gameActive;
 			const RoundPhase previousRoundPhase = roundPhase;
 			const auto &receivedPacket = *reinterpret_cast<const Packet_GameStateUpdate *>(payload);
+			receivedInitialGameState = true;
+			const bool mapChanged = currentMapIndex != receivedPacket.currentMapIndex;
 			gameActive = receivedPacket.gameActive != 0;
 			hunterCID = receivedPacket.hunterCID;
+			currentMapIndex = receivedPacket.currentMapIndex;
 			roundPhase = gameActive ? decodeRoundPhase(receivedPacket.roundPhase) : RoundPhase::Lobby;
 			roundTimerRemainingSeconds = gameActive ? static_cast<float>(receivedPacket.timerSeconds) : 0.0f;
 
 			const bool enteredHidePhase = roundPhase == RoundPhase::HiderHide
 				&& (!wasGameActive || previousRoundPhase != RoundPhase::HiderHide);
-			if (enteredHidePhase)
+			if (mapChanged || enteredHidePhase)
 			{
 				localPlayerFound = false;
 				roundResult = RoundResult::None;

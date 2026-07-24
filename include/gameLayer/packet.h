@@ -62,6 +62,7 @@ struct Packet_GameStateUpdate
 	std::uint64_t hunterCID = 0;
 	std::uint32_t roundPhase = 0;
 	std::uint32_t timerSeconds = 0;
+	std::uint32_t currentMapIndex = 0;
 };
 
 struct Packet_HunterHitPlayer
