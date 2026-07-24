@@ -72,6 +72,7 @@ struct ClientNetworking
 	bool gameActive = false;
 	std::uint64_t hunterCID = 0;
 	std::uint32_t currentMapIndex = 0;
+	std::uint32_t totalHiderCount = 0;
 	RoundPhase roundPhase = RoundPhase::Lobby;
 	float roundTimerRemainingSeconds = 0.0f;
 	bool localPlayerFound = false;

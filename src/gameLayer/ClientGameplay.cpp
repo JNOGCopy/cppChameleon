@@ -2183,6 +2183,99 @@ void renderHunterCrosshair(const ClientGameplay &gameplay, gl2d::Renderer2D &ren
 	renderer.renderRectangle(verticalInnerBottom, innerColor);
 }
 
+void renderHunterCameleonTracker(const ClientGameplay &gameplay, gl2d::Renderer2D &renderer, gl2d::Font &font)
+{
+	auto &clientNetworking = gameplay.clientNetworking;
+	if (!clientNetworking.gameActive
+		|| !clientNetworking.isLocalHunter()
+		|| font.texture.id == 0
+		|| renderer.windowW <= 0
+		|| renderer.windowH <= 0)
+	{
+		return;
+	}
+
+	const int totalCameleons = (std::max)(0, static_cast<int>(clientNetworking.totalHiderCount));
+	const int foundCameleons = (std::min)(
+		totalCameleons,
+		static_cast<int>(clientNetworking.foundHiderIDs.size()));
+
+	constexpr char cTitle[] = "Cameleons";
+	constexpr float cPanelMargin = 18.0f;
+	constexpr float cPanelPadding = 14.0f;
+	constexpr float cTitleSize = 18.0f;
+	constexpr float cTitleGap = 12.0f;
+	constexpr float cCircleRadius = 10.0f;
+	constexpr float cCircleSpacing = 10.0f;
+	constexpr float cRowSpacing = 12.0f;
+	constexpr int cMaxCirclesPerRow = 8;
+
+	const glm::vec2 titleTextSize = renderer.getTextSize(cTitle, font, cTitleSize, 2.0f, 2.0f);
+	const int rowCount = totalCameleons > 0 ? ((totalCameleons + cMaxCirclesPerRow - 1) / cMaxCirclesPerRow) : 0;
+	const int widestRowCircleCount = totalCameleons > 0 ? (std::min)(totalCameleons, cMaxCirclesPerRow) : 0;
+	const float circleDiameter = cCircleRadius * 2.0f;
+	const float circlesWidth = widestRowCircleCount > 0
+		? widestRowCircleCount * circleDiameter + (widestRowCircleCount - 1) * cCircleSpacing
+		: 0.0f;
+	const float circlesHeight = rowCount > 0
+		? rowCount * circleDiameter + (rowCount - 1) * cRowSpacing
+		: 0.0f;
+
+	const float panelWidth = (std::max)(titleTextSize.x, circlesWidth) + cPanelPadding * 2.0f;
+	const float panelHeight = cPanelPadding * 2.0f
+		+ titleTextSize.y
+		+ (rowCount > 0 ? (cTitleGap + circlesHeight) : 0.0f);
+	const gl2d::Rect panel = {
+		renderer.windowW - panelWidth - cPanelMargin,
+		cPanelMargin,
+		panelWidth,
+		panelHeight
+	};
+
+	renderer.renderRectangle(panel, {0.06f, 0.08f, 0.11f, 0.78f});
+	renderer.renderRectangleOutline(panel, {0.0f, 0.0f, 0.0f, 0.92f}, 2.0f);
+	renderer.renderText(
+		{panel.x + cPanelPadding, panel.y + cPanelPadding + titleTextSize.y},
+		cTitle,
+		font,
+		Colors_White,
+		cTitleSize,
+		2.0f,
+		2.0f,
+		false);
+
+	for (int circleIndex = 0; circleIndex < totalCameleons; ++circleIndex)
+	{
+		const int rowIndex = circleIndex / cMaxCirclesPerRow;
+		const int columnIndex = circleIndex % cMaxCirclesPerRow;
+		const int circlesInThisRow = (std::min)(cMaxCirclesPerRow, totalCameleons - rowIndex * cMaxCirclesPerRow);
+		const float rowWidth = circlesInThisRow * circleDiameter + (circlesInThisRow - 1) * cCircleSpacing;
+		const float rowStartX = panel.x + panel.w - cPanelPadding - rowWidth;
+		const glm::vec2 center = {
+			rowStartX + cCircleRadius + columnIndex * (circleDiameter + cCircleSpacing),
+			panel.y + cPanelPadding + titleTextSize.y + cTitleGap + cCircleRadius
+				+ rowIndex * (circleDiameter + cRowSpacing)
+		};
+
+		renderer.renderCircleOutline(center, cCircleRadius + 1.0f, {0.0f, 0.0f, 0.0f, 0.95f}, 4.0f, 28);
+		renderer.renderCircleOutline(center, cCircleRadius, Colors_White, 2.0f, 28);
+
+		if (circleIndex < foundCameleons)
+		{
+			const glm::vec2 offset = {cCircleRadius * 0.72f, cCircleRadius * 0.72f};
+			const glm::vec2 topLeft = center - offset;
+			const glm::vec2 topRight = {center.x + offset.x, center.y - offset.y};
+			const glm::vec2 bottomLeft = {center.x - offset.x, center.y + offset.y};
+			const glm::vec2 bottomRight = center + offset;
+
+			renderer.renderLine(topLeft, bottomRight, {0.0f, 0.0f, 0.0f, 0.92f}, 5.0f);
+			renderer.renderLine(topRight, bottomLeft, {0.0f, 0.0f, 0.0f, 0.92f}, 5.0f);
+			renderer.renderLine(topLeft, bottomRight, {0.86f, 0.12f, 0.12f, 0.98f}, 2.5f);
+			renderer.renderLine(topRight, bottomLeft, {0.86f, 0.12f, 0.12f, 0.98f}, 2.5f);
+		}
+	}
+}
+
 void renderGameplayNotifications(ClientGameplay &gameplay, gl2d::Renderer2D &renderer, gl2d::Font &font)
 {
 	auto &clientNetworking = gameplay.clientNetworking;
@@ -2191,6 +2284,7 @@ void renderGameplayNotifications(ClientGameplay &gameplay, gl2d::Renderer2D &ren
 
 	renderer.pushCamera();
 	renderHunterCrosshair(gameplay, renderer);
+	renderHunterCameleonTracker(gameplay, renderer, font);
 
 	float topOffset = 18.0f;
 	if (clientNetworking.localPlayerFound)

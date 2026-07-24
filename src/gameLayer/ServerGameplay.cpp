@@ -66,12 +66,25 @@ namespace
 
 	Packet_GameStateUpdate buildGameStateUpdatePacket(const ServerGameplay &serverGameplay)
 	{
+		std::uint32_t totalHiderCount = 0;
+		if (serverGameplay.gameActive)
+		{
+			for (std::uint64_t cid : serverGameplay.connectedClientIDs)
+			{
+				if (cid != 0 && cid != serverGameplay.hunterCID)
+				{
+					totalHiderCount++;
+				}
+			}
+		}
+
 		Packet_GameStateUpdate packet = {};
 		packet.gameActive = serverGameplay.gameActive ? 1u : 0u;
 		packet.hunterCID = serverGameplay.hunterCID;
 		packet.roundPhase = serverGameplay.roundPhase;
 		packet.timerSeconds = getRoundTimerSecondsRemaining(serverGameplay);
 		packet.currentMapIndex = clampGameMapIndex(serverGameplay.currentMapIndex);
+		packet.totalHiderCount = totalHiderCount;
 		return packet;
 	}
 
@@ -439,6 +452,11 @@ void ServerGameplay::removeConnection(ENetEvent &event)
 		lastStatus = connectedClients == 0
 			? "No clients connected."
 			: "Client disconnected. Total clients: " + std::to_string(connectedClients) + ".";
+	}
+
+	if (server && gameActive && cid != 0 && cid != hunterCID)
+	{
+		broadcastGameStateUpdate(*this);
 	}
 }
 
