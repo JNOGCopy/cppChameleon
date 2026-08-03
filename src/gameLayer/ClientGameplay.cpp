@@ -1214,7 +1214,7 @@ glm::ivec2 getMouseFramebufferPosition(ClientGameplay &gameplay, const platform:
 	return paintDebugState.framebufferMousePosition;
 }
 
-bool sampleVisibleScreenColor(glm::ivec2 screenPosition, glm::vec3 &sampledColor)
+bool sampleDeferredSceneColor(ClientGameplay &gameplay, glm::ivec2 screenPosition, glm::vec3 &sampledColor)
 {
 	sampledColor = {};
 	constexpr int sampleRadius = 2;
@@ -1235,39 +1235,29 @@ bool sampleVisibleScreenColor(glm::ivec2 screenPosition, glm::vec3 &sampledColor
 	const int maxX = (std::min)(framebufferSize.x - 1, screenPosition.x + sampleRadius);
 	const int minY = (std::max)(0, screenPosition.y - sampleRadius);
 	const int maxY = (std::min)(framebufferSize.y - 1, screenPosition.y + sampleRadius);
-	const int sampleWidth = maxX - minX + 1;
-	const int sampleHeight = maxY - minY + 1;
-	const GLint readY = framebufferSize.y - 1 - maxY;
-	GLint previousReadFramebuffer = 0;
-	GLint previousReadBuffer = GL_BACK;
-	GLint previousPackAlignment = 4;
-
-	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousReadFramebuffer);
-	glGetIntegerv(GL_READ_BUFFER, &previousReadBuffer);
-	glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
-
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	glReadBuffer(GL_BACK);
-	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-
-	std::vector<unsigned char> pixels(static_cast<size_t>(sampleWidth * sampleHeight) * 4);
-	glReadPixels(minX, readY, sampleWidth, sampleHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-	glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
-	glReadBuffer(static_cast<GLenum>(previousReadBuffer));
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, previousReadFramebuffer);
-
 	glm::vec3 accumulatedColor = {};
-	const size_t pixelCount = static_cast<size_t>(sampleWidth * sampleHeight);
-	for (size_t pixelIndex = 0; pixelIndex < pixelCount; ++pixelIndex)
+	int validSampleCount = 0;
+	for (int sampleY = minY; sampleY <= maxY; ++sampleY)
 	{
-		const size_t baseIndex = pixelIndex * 4;
-		accumulatedColor.r += pixels[baseIndex + 0] / 255.0f;
-		accumulatedColor.g += pixels[baseIndex + 1] / 255.0f;
-		accumulatedColor.b += pixels[baseIndex + 2] / 255.0f;
+		for (int sampleX = minX; sampleX <= maxX; ++sampleX)
+		{
+			glm::vec4 deferredAlbedoSample = {};
+			if (!gameplay.renderer3D.sampleDeferredAlbedo({sampleX, sampleY}, deferredAlbedoSample))
+			{
+				continue;
+			}
+
+			accumulatedColor += glm::vec3(deferredAlbedoSample);
+			++validSampleCount;
+		}
 	}
 
-	sampledColor = accumulatedColor / static_cast<float>(pixelCount);
+	if (validSampleCount <= 0)
+	{
+		return false;
+	}
+
+	sampledColor = accumulatedColor / static_cast<float>(validSampleCount);
 
 	return true;
 }
@@ -1597,7 +1587,7 @@ void pickPaintColorFromScreen(ClientGameplay &gameplay, platform::Input &input)
 	}
 
 	glm::vec3 sampledColor = {};
-	if (sampleVisibleScreenColor(getMouseFramebufferPosition(gameplay, input), sampledColor))
+	if (sampleDeferredSceneColor(gameplay, getMouseFramebufferPosition(gameplay, input), sampledColor))
 	{
 		playerPaintColorHsv = rgbToHsv(sampledColor);
 	}

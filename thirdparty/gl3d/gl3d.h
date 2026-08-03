@@ -1478,9 +1478,9 @@ json.exception.type_error.313 | invalid value to unflatten | The @ref unflatten 
 json.exception.type_error.314 | only objects can be unflattened | The @ref unflatten function only works for an object whose keys are JSON Pointers.
 json.exception.type_error.315 | values in object must be primitive | The @ref unflatten function only works for an object whose keys are JSON Pointers and whose values are primitive.
 json.exception.type_error.316 | invalid UTF-8 byte at index 10: 0x7E | The @ref dump function only works with UTF-8 encoded strings; that is, if you assign a `std::string` to a JSON value, make sure it is UTF-8 encoded. |
-json.exception.type_error.317 | JSON value cannot be serialized to requested format | The dynamic type of the object cannot be represented in the requested serialization format (e.g. a raw `true` or `null` JSON object cannot be serialized to BSON) |
+json.exception.type_error.317 | JSON value cannot be serialized to requested format | The dynamic type of the object cannot be represented in the requested serialization format (e.g. a raw 	rue` or `null` JSON object cannot be serialized to BSON) |
 
-@liveexample{The following code shows how a `type_error` exception can be
+@liveexample{The following code shows how a 	ype_error` exception can be
 caught.,type_error}
 
 @sa @ref exception for the base class of the library exceptions
@@ -2548,7 +2548,7 @@ struct to_json_fn
 };
 }  // namespace detail
 
-/// namespace to hold default `to_json` function
+/// namespace to hold default 	o_json` function
 namespace
 {
 constexpr const auto& to_json = detail::static_const<detail::to_json_fn>::value;
@@ -3023,7 +3023,7 @@ class lexer
     enum class token_type
     {
         uninitialized,    ///< indicating the scanner is uninitialized
-        literal_true,     ///< the `true` literal
+        literal_true,     ///< the 	rue` literal
         literal_false,    ///< the `false` literal
         literal_null,     ///< the `null` literal
         value_string,     ///< a string -- use get_string() for actual value
@@ -7026,7 +7026,7 @@ class binary_reader
     @brief Parses a C-style string from the BSON input.
     @param[in, out] result  A reference to the string variable where the read
                             string is to be stored.
-    @return `true` if the \x00-byte indicating the end of the string was
+    @return 	rue` if the \x00-byte indicating the end of the string was
              encountered before the EOF; false` indicates an unexpected EOF.
     */
     bool get_bson_cstr(string_t& result)
@@ -7058,7 +7058,7 @@ class binary_reader
                             string is to be stored.
     @tparam NumberType The type of the length @a len
     @pre len >= 1
-    @return `true` if the string was successfully parsed
+    @return 	rue` if the string was successfully parsed
     */
     template<typename NumberType>
     bool get_bson_string(const NumberType len, string_t& result)
@@ -12173,7 +12173,7 @@ class json_pointer
 
     @return a string representation of the JSON pointer
 
-    @liveexample{The example shows the result of `to_string`.,
+    @liveexample{The example shows the result of 	o_string`.,
     json_pointer__to_string}
 
     @since version 2.0.0
@@ -12895,7 +12895,7 @@ default; will be used in @ref number_integer_t)
 default; will be used in @ref number_float_t)
 @tparam AllocatorType type of the allocator to use (`std::allocator` by
 default)
-@tparam JSONSerializer the serializer to resolve internal calls to `to_json()`
+@tparam JSONSerializer the serializer to resolve internal calls to 	o_json()`
 and `from_json()` (@ref adl_serializer by default)
 
 @requirement The class satisfies the following concept requirements:
@@ -13380,7 +13380,7 @@ class basic_json
     @brief a type for a boolean
 
     [RFC 7159](http://rfc7159.net/rfc7159) implicitly describes a boolean as a
-    type which differentiates the two literals `true` and `false`.
+    type which differentiates the two literals 	rue` and `false`.
 
     To store objects in C++, a type is defined by the template parameter @a
     BooleanType which chooses the type to use.
@@ -13906,7 +13906,7 @@ class basic_json
     writing to this value has no effect for parse_event_t::key events
 
     @return Whether the JSON value which called the function during parsing
-    should be kept (`true`) or not (`false`). In the latter case, it is either
+    should be kept (	rue`) or not (`false`). In the latter case, it is either
     skipped completely or replaced by an empty discarded object.
 
     @sa @ref parse for examples
@@ -13987,7 +13987,7 @@ class basic_json
     @brief create a JSON value
 
     This is a "catch all" constructor for all compatible JSON types; that is,
-    types for which a `to_json()` method exists. The constructor forwards the
+    types for which a 	o_json()` method exists. The constructor forwards the
     parameter @a val to that method (to `json_serializer<U>::to_json` method
     with `U = uncvref_t<CompatibleType>`, to be exact).
 
@@ -14020,18 +14020,18 @@ class basic_json
     - @a CompatibleType is not a @ref basic_json nested type (e.g.,
          @ref json_pointer, @ref iterator, etc ...)
     - @ref @ref json_serializer<U> has a
-         `to_json(basic_json_t&, CompatibleType&&)` method
+         	o_json(basic_json_t&, CompatibleType&&)` method
 
     @tparam U = `uncvref_t<CompatibleType>`
 
     @param[in] val the value to be forwarded to the respective constructor
 
     @complexity Usually linear in the size of the passed @a val, also
-                depending on the implementation of the called `to_json()`
+                depending on the implementation of the called 	o_json()`
                 method.
 
     @exceptionsafety Depends on the called constructor. For types directly
-    supported by the library (i.e., all types for which no `to_json()` function
+    supported by the library (i.e., all types for which no 	o_json()` function
     was provided), strong guarantee holds: if an exception is thrown, there are
     no changes to any JSON value.
 
@@ -14068,11 +14068,11 @@ class basic_json
     @param[in] val the @ref basic_json value to be converted.
 
     @complexity Usually linear in the size of the passed @a val, also
-                depending on the implementation of the called `to_json()`
+                depending on the implementation of the called 	o_json()`
                 method.
 
     @exceptionsafety Depends on the called constructor. For types directly
-    supported by the library (i.e., all types for which no `to_json()` function
+    supported by the library (i.e., all types for which no 	o_json()` function
     was provided), strong guarantee holds: if an exception is thrown, there are
     no changes to any JSON value.
 
@@ -14128,7 +14128,7 @@ class basic_json
     @brief create a container (array or object) from an initializer list
 
     Creates a JSON value of type array or object from the passed initializer
-    list @a init. In case @a type_deduction is `true` (default), the type of
+    list @a init. In case @a type_deduction is 	rue` (default), the type of
     the JSON value to be created is deducted from the initializer list @a init
     according to the following rules:
 
@@ -14165,7 +14165,7 @@ class basic_json
 
     @param[in] init  initializer list with JSON values
 
-    @param[in] type_deduction internal parameter; when set to `true`, the type
+    @param[in] type_deduction internal parameter; when set to 	rue`, the type
     of the JSON value is deducted from the initializer list @a init; when set
     to `false`, the type provided via @a manual_type is forced. This mode is
     used by the functions @ref array(initializer_list_t) and
@@ -14174,12 +14174,12 @@ class basic_json
     @param[in] manual_type internal parameter; when @a type_deduction is set
     to `false`, the created JSON value will use the provided type (only @ref
     value_t::array and @ref value_t::object are valid); when @a type_deduction
-    is set to `true`, this parameter has no effect
+    is set to 	rue`, this parameter has no effect
 
     @throw type_error.301 if @a type_deduction is `false`, @a manual_type is
     `value_t::object`, but @a init contains an element which is not a pair
     whose first element is a string. In this case, the constructor could not
-    create an object. If @a type_deduction would have be `true`, an array
+    create an object. If @a type_deduction would have be 	rue`, an array
     would have been created. See @ref object(initializer_list_t)
     for an example.
 
@@ -14801,7 +14801,7 @@ class basic_json
     @exceptionsafety No-throw guarantee: this member function never throws
     exceptions.
 
-    @liveexample{The following code exemplifies `type()` for all JSON
+    @liveexample{The following code exemplifies 	ype()` for all JSON
     types.,type}
 
     @sa @ref operator value_t() -- return the type of the JSON value (implicit)
@@ -14820,7 +14820,7 @@ class basic_json
     This function returns true if and only if the JSON type is primitive
     (string, number, boolean, or null).
 
-    @return `true` if type is primitive (string, number, boolean, or null),
+    @return 	rue` if type is primitive (string, number, boolean, or null),
     `false` otherwise.
 
     @complexity Constant.
@@ -14850,7 +14850,7 @@ class basic_json
     This function returns true if and only if the JSON type is structured
     (array or object).
 
-    @return `true` if type is structured (array or object), `false` otherwise.
+    @return 	rue` if type is structured (array or object), `false` otherwise.
 
     @complexity Constant.
 
@@ -14876,7 +14876,7 @@ class basic_json
 
     This function returns true if and only if the JSON value is null.
 
-    @return `true` if type is null, `false` otherwise.
+    @return 	rue` if type is null, `false` otherwise.
 
     @complexity Constant.
 
@@ -14898,7 +14898,7 @@ class basic_json
 
     This function returns true if and only if the JSON value is a boolean.
 
-    @return `true` if type is boolean, `false` otherwise.
+    @return 	rue` if type is boolean, `false` otherwise.
 
     @complexity Constant.
 
@@ -14921,7 +14921,7 @@ class basic_json
     This function returns true if and only if the JSON value is a number. This
     includes both integer (signed and unsigned) and floating-point values.
 
-    @return `true` if type is number (regardless whether integer, unsigned
+    @return 	rue` if type is number (regardless whether integer, unsigned
     integer or floating-type), `false` otherwise.
 
     @complexity Constant.
@@ -14951,7 +14951,7 @@ class basic_json
     This function returns true if and only if the JSON value is a signed or
     unsigned integer number. This excludes floating-point values.
 
-    @return `true` if type is an integer or unsigned integer number, `false`
+    @return 	rue` if type is an integer or unsigned integer number, `false`
     otherwise.
 
     @complexity Constant.
@@ -14980,7 +14980,7 @@ class basic_json
     This function returns true if and only if the JSON value is an unsigned
     integer number. This excludes floating-point and signed integer values.
 
-    @return `true` if type is an unsigned integer number, `false` otherwise.
+    @return 	rue` if type is an unsigned integer number, `false` otherwise.
 
     @complexity Constant.
 
@@ -15008,7 +15008,7 @@ class basic_json
     This function returns true if and only if the JSON value is a
     floating-point number. This excludes signed and unsigned integer values.
 
-    @return `true` if type is a floating-point number, `false` otherwise.
+    @return 	rue` if type is a floating-point number, `false` otherwise.
 
     @complexity Constant.
 
@@ -15035,7 +15035,7 @@ class basic_json
 
     This function returns true if and only if the JSON value is an object.
 
-    @return `true` if type is object, `false` otherwise.
+    @return 	rue` if type is object, `false` otherwise.
 
     @complexity Constant.
 
@@ -15057,7 +15057,7 @@ class basic_json
 
     This function returns true if and only if the JSON value is an array.
 
-    @return `true` if type is array, `false` otherwise.
+    @return 	rue` if type is array, `false` otherwise.
 
     @complexity Constant.
 
@@ -15079,7 +15079,7 @@ class basic_json
 
     This function returns true if and only if the JSON value is a string.
 
-    @return `true` if type is string, `false` otherwise.
+    @return 	rue` if type is string, `false` otherwise.
 
     @complexity Constant.
 
@@ -15106,7 +15106,7 @@ class basic_json
     That is, discarded values can only occur during parsing, but will be
     removed when inside a structured value or replaced by null in other cases.
 
-    @return `true` if type is discarded, `false` otherwise.
+    @return 	rue` if type is discarded, `false` otherwise.
 
     @complexity Constant.
 
@@ -17203,7 +17203,7 @@ class basic_json
             defined as follows:
             Value type  | return value
             ----------- | -------------
-            null        | `true`
+            null        | 	rue`
             boolean     | `false`
             string      | `false`
             number      | `false`
@@ -19082,7 +19082,7 @@ class basic_json
 
     @complexity Constant.
 
-    @liveexample{The following code exemplifies `type_name()` for all JSON
+    @liveexample{The following code exemplifies 	ype_name()` for all JSON
     types.,type_name}
 
     @sa @ref type() -- return the type of the JSON value
@@ -19148,7 +19148,7 @@ class basic_json
     JSON value type | value/range                                | CBOR type                          | first byte
     --------------- | ------------------------------------------ | ---------------------------------- | ---------------
     null            | `null`                                     | Null                               | 0xF6
-    boolean         | `true`                                     | True                               | 0xF5
+    boolean         | 	rue`                                     | True                               | 0xF5
     boolean         | `false`                                    | False                              | 0xF4
     number_integer  | -9223372036854775808..-2147483649          | Negative integer (8 bytes follow)  | 0x3B
     number_integer  | -2147483648..-32769                        | Negative integer (4 bytes follow)  | 0x3A
@@ -19252,7 +19252,7 @@ class basic_json
     JSON value type | value/range                       | MessagePack type | first byte
     --------------- | --------------------------------- | ---------------- | ----------
     null            | `null`                            | nil              | 0xC0
-    boolean         | `true`                            | true             | 0xC3
+    boolean         | 	rue`                            | true             | 0xC3
     boolean         | `false`                           | false            | 0xC2
     number_integer  | -9223372036854775808..-2147483649 | int64            | 0xD3
     number_integer  | -2147483648..-32769               | int32            | 0xD2
@@ -19348,7 +19348,7 @@ class basic_json
     JSON value type | value/range                       | UBJSON type | marker
     --------------- | --------------------------------- | ----------- | ------
     null            | `null`                            | null        | `Z`
-    boolean         | `true`                            | true        | `T`
+    boolean         | 	rue`                            | true        | `T`
     boolean         | `false`                           | false       | `F`
     number_integer  | -9223372036854775808..-2147483649 | int64       | `L`
     number_integer  | -2147483648..-32769               | int32       | `l`
@@ -19449,7 +19449,7 @@ class basic_json
     JSON value type | value/range                       | BSON type   | marker
     --------------- | --------------------------------- | ----------- | ------
     null            | `null`                            | null        | 0x0A
-    boolean         | `true`, `false`                   | boolean     | 0x08
+    boolean         | 	rue`, `false`                   | boolean     | 0x08
     number_integer  | -9223372036854775808..-2147483649 | int64       | 0x12
     number_integer  | -2147483648..2147483647           | int32       | 0x10
     number_integer  | 2147483648..9223372036854775807   | int64       | 0x12
@@ -19561,7 +19561,7 @@ class basic_json
     map                    | object          | 0xBB
     map                    | object          | 0xBF
     False                  | `false`         | 0xF4
-    True                   | `true`          | 0xF5
+    True                   | 	rue`          | 0xF5
     Null                   | `null`          | 0xF6
     Half-Precision Float   | number_float    | 0xF9
     Single-Precision Float | number_float    | 0xFA
@@ -19659,7 +19659,7 @@ class basic_json
     fixstr           | string          | 0xA0..0xBF
     nil              | `null`          | 0xC0
     false            | `false`         | 0xC2
-    true             | `true`          | 0xC3
+    true             | 	rue`          | 0xC3
     float 32         | number_float    | 0xCA
     float 64         | number_float    | 0xCB
     uint 8           | number_unsigned | 0xCC
@@ -19761,7 +19761,7 @@ class basic_json
     no-op       | *no value, next value is read*          | `N`
     null        | `null`                                  | `Z`
     false       | `false`                                 | `F`
-    true        | `true`                                  | `T`
+    true        | 	rue`                                  | `T`
     float32     | number_float                            | `d`
     float64     | number_float                            | `D`
     uint8       | number_unsigned                         | `U`
@@ -20470,7 +20470,7 @@ class basic_json
     be changed into the value @a target by calling @ref patch function.
 
     @invariant For two JSON values @a source and @a target, the following code
-    yields always `true`:
+    yields always 	rue`:
     @code {.cpp}
     source.patch(diff(source, target)) == target;
     @endcode
@@ -22588,7 +22588,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // The MIT License (MIT)
 //
-// Copyright (c) 2015 - 2020 Syoyo Fujita, Aurélien Chatelain and many
+// Copyright (c) 2015 - 2020 Syoyo Fujita, AurÃ©lien Chatelain and many
 // contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -24822,7 +24822,7 @@ namespace tinygltf
 	/*
 	   base64.cpp and base64.h
 
-	   Copyright (C) 2004-2008 René Nyffenegger
+	   Copyright (C) 2004-2008 RenÃ© Nyffenegger
 
 	   This source code is provided 'as-is', without any express or implied
 	   warranty. In no event will the author be held liable for any damages
@@ -24842,7 +24842,7 @@ namespace tinygltf
 
 	   3. This notice may not be removed or altered from any source distribution.
 
-	   René Nyffenegger rene.nyffenegger@adp-gmbh.ch
+	   RenÃ© Nyffenegger rene.nyffenegger@adp-gmbh.ch
 
 	*/
 
@@ -27541,7 +27541,7 @@ namespace tinygltf
 		else
 		{
 			std::stringstream ss;
-			ss << "Unsupported `type` for accessor object. Got \"" << type << "\"\n";
+			ss << "Unsupported 	ype` for accessor object. Got \"" << type << "\"\n";
 			if (err)
 			{
 				(*err) += ss.str();
@@ -29469,7 +29469,7 @@ namespace tinygltf
 				{
 					if (err)
 					{
-						(*err) += "`textures' does not contain an JSON object.";
+						(*err) += "	extures' does not contain an JSON object.";
 					}
 					return false;
 				}
@@ -34832,6 +34832,7 @@ namespace gl3d
 		void setEntityPaintTarget(Entity& e);
 		void clearEntityPaintTarget();
 		bool sampleEntityPaintTarget(glm::ivec2 screenPosition, PaintTargetSample &sample);
+		bool sampleDeferredAlbedo(glm::ivec2 screenPosition, glm::vec4 &sample);
 
 	#pragma endregion
 
@@ -35138,6 +35139,7 @@ namespace gl3d
 					//emissive,
 					materialIndex,
 					textureUV,
+					albedo,
 					//textureDerivates,
 					bufferCount,
 				};
