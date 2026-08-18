@@ -1,0 +1,37 @@
+CppChameleon - A recreation of the famous game "MECCHA CHAMELEON" in C++
+
+HOW TO INSTALL:
+
+You must ensure that you have already installed the following programs:
+
+- Windows 10/11
+- git: (not neccesary at all)
+- CMake: MakeFiles configurator
+- Make: "Scripting language" that builds the game
+- C/C++ compiler
+
+
+First of all, you need to clone the repository (or simply download it), you can do it with the next command
+
+git clone https://github.com/meemknight/cppChameleon
+
+Then, you must create a folder called "build", after that you will have to put this command in order to generate the makefile
+
+cmake -S . -B build
+
+After build the makefile, you enter to the build folder, and you will see a file called makefile, so the next step ant the final is executing it
+
+make
+
+After that, a executable will be created
+
+CREDITS:
+
+MECCHA CHAMELEON and related assets are owned by lemorion_1224.
+Please, buy the game at https://store.steampowered.com/app/4704690/MECCHA_CHAMELEON/ in order to support this game developer.
+
+"meccha chameleon guy" (https://skfb.ly/pLEX6) by photon (that one larry) is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+"Among Us - Map "The Skeld"" (https://skfb.ly/6VvPu) by Pablopcb is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+"chicken gun fruzer circus" (https://skfb.ly/pKnDy) by amogusstrikesback2 is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
