@@ -8,6 +8,8 @@ project(mygame)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 #! ! ! ! ! ! !
 #set this to ON instead of OFF to ship the game!
 #basically this will change the RESOURCES_PATH to be the local path

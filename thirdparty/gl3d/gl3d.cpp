@@ -31208,7 +31208,11 @@ namespace tinygltf
 #pragma region Core
 
 #include <stdio.h>
-#include <Windows.h>
+
+#ifdef _WIN32
+  #include <Windows.h>
+#endif
+
 #include <signal.h>
 #include <sstream>
 
@@ -31224,7 +31228,7 @@ namespace gl3d
 		unsigned const line_number,
 		const char *comment)
 	{
-
+    #ifdef _WIN32
 		char c[1024] = {};
 
 		sprintf(c,
@@ -31264,7 +31268,7 @@ namespace gl3d
 			__debugbreak();
 			return;
 		}
-		case IDIGNORE: // Return control to caller
+    case IDIGNORE: // Return control to caller
 		{
 			return;
 		}
@@ -31274,7 +31278,7 @@ namespace gl3d
 		}
 		}
 
-
+    #endif
 	}
 
 	//https://learnopengl.com/In-Practice/Debugging
@@ -31479,8 +31483,8 @@ bool gl3d::defaultFileExists(const char *fileName, void *userData)
 ////////////////////////////////////////////////
 #pragma region Texture
 
-#include <glm\vec2.hpp>
-#include <glm\vec3.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 #include <algorithm>
 
